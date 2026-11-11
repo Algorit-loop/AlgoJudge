@@ -1,0 +1,277 @@
+% !TEX program = xelatex
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}[Scale=0.92]
+\usepackage[table]{xcolor}
+\usepackage{tabularx,booktabs,enumitem,array}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+
+\definecolor{web}{HTML}{DCE8FB}
+\definecolor{dat}{HTML}{E3F4E1}
+\definecolor{asy}{HTML}{FFF1CC}
+\definecolor{jud}{HTML}{FADBD8}
+\definecolor{ext}{HTML}{ECECEC}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\renewcommand{\c}[1]{\texttt{#1}}
+\renewcommand{\arraystretch}{1.25}
+
+% \comp{tên}{làm gì}{vì sao cần}{nếu không có}{thay thế / bỏ được?}{nguồn code}
+\newcommand{\comp}[6]{%
+\begin{tcolorbox}[enhanced,breakable,colback=white,colframe=black!55,boxrule=0.5pt,arc=2pt,
+  title={\textbf{#1}},fonttitle=\large,left=4pt,right=4pt,top=3pt,bottom=3pt]
+\begin{tabularx}{\linewidth}{@{}>{\bfseries\raggedright}p{2.7cm}X@{}}
+Làm gì & #2 \\[2pt]
+Vì sao cần & #3 \\[2pt]
+Nếu không có & #4 \\[2pt]
+Thay thế / bỏ? & #5 \\[2pt]
+Căn cứ (source) & \small #6 \\
+\end{tabularx}
+\end{tcolorbox}}
+
+\title{\textbf{Kiến trúc VNOJ}\\[2pt]\large Các thành phần, nhiệm vụ, lý do tồn tại và phương án thay thế}
+\author{Phân tích từ source code \c{VNOI-Admin/OJ} (site) và \c{VNOI-Admin/judge-server}}
+\date{11/11/2026}
+
+\begin{document}
+\maketitle
+
+\section{Phạm vi và nguồn đã dùng}
+Tài liệu này chỉ nói về \textbf{kiến trúc}: hệ thống gồm những khối nào, mỗi khối làm gì, vì sao cần, thiếu thì sao, và có thể thay hoặc bỏ không.
+
+Tôi đã kiểm tra độ mới của từng repo trước khi dùng:
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}lllX@{}}
+\toprule
+Repo & Commit mới nhất & Dùng? & Ghi chú \\
+\midrule
+\c{OJ} (site Django) & 04/11/2026 & \textbf{Có, căn cứ chính} & Đã có S3 storage, judge protocol v2, celery beat, OAuth. \\
+\c{judge-server} (\c{master}) & 10/10/2026 & \textbf{Có, căn cứ chính} & Cùng bản đã cài \c{tier-vnoj} ở phần trước. \\
+\c{vnoj-docker} & 13/09/2023 & Chỉ để tham khảo cách ghép nginx/uWSGI & \textbf{Cũ}: không có S3, không chạy celery beat. Mọi chỗ trích từ đây đều ghi rõ. \\
+\c{vnoj-docs} & 19/09/2024 & Không & Cũ hơn site khoảng 2 năm và không mô tả kiến trúc. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Các nhánh chưa merge của \c{judge-server} (\c{microvm-api-judge}, \c{hiep/landlock}, \c{wip/parallel-case-grading}) \textbf{không} được tính là kiến trúc hiện hành; chúng chỉ được nhắc ở mục sandbox.
+
+\textbf{Giới hạn:} trang \c{oj.vnoi.info} nằm sau Cloudflare challenge (HTTP 403, \c{cf-mitigated: challenge}), nên tôi \textbf{không quan sát được hạ tầng chạy thật} (số máy chấm, vị trí đặt từng khối, CDN). Mọi kết luận dưới đây là về thiết kế trong mã nguồn, không phải về cách VNOI đang vận hành.
+
+\section{Bức tranh tổng thể}
+VNOJ là bản fork của DMOJ. Có thể chia thành bốn mặt phẳng: \emph{web} (phục vụ người dùng), \emph{dữ liệu}, \emph{bất đồng bộ / thời gian thực}, và \emph{chấm bài}. Điểm quan trọng nhất: \textbf{Django không tự chấm bài}. Nó giao việc cho \c{bridged}, và \c{bridged} giao cho các máy chấm (judge) kết nối vào.
+
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners=2pt,minimum width=2.5cm,minimum height=1.0cm,align=center,font=\footnotesize,line width=0.5pt},
+  web/.style={box,fill=web}, dat/.style={box,fill=dat}, asy/.style={box,fill=asy}, jud/.style={box,fill=jud}, ext/.style={box,fill=ext,dashed},
+  arr/.style={-{Stealth[length=2mm]},line width=0.5pt},
+  dsh/.style={arr,dashed,black!70},
+  lab/.style={font=\scriptsize,fill=white,inner sep=1pt},
+  plane/.style={draw=black!35,rounded corners=4pt,dashed,inner sep=8pt}
+]
+\node[ext] (user) at (0,0) {Trình duyệt\\người dùng};
+\node[web] (proxy) at (0,-2.2) {Reverse proxy\\(nginx)};
+\node[web] (app) at (0,-4.6) {Django site\\(uWSGI + app \c{judge})};
+\node[asy] (celery) at (-4.0,-4.6) {Celery\\worker + beat};
+\node[asy] (ws) at (4.8,0) {wsevent\\(Node.js)};
+\node[jud] (bridge) at (4.8,-4.6) {\c{bridged}\\hàng đợi + điều phối};
+\node[jud] (judge) at (9.6,-4.6) {Judge server $\times N$\\sandbox + runtimes};
+\node[jud,dashed] (bal) at (9.6,-2.2) {Balancer\\(tuỳ chọn)};
+\node[dat] (redis) at (-4.0,-7.2) {Redis\\cache, session, broker};
+\node[dat] (db) at (0,-7.2) {MySQL / MariaDB};
+\node[dat] (store) at (4.8,-7.2) {Kho test data\\(FS / S3)};
+
+\draw[arr] (user) -- node[lab]{HTTP(S)} (proxy);
+\draw[arr] (proxy) -- node[lab]{uwsgi} (app);
+\draw[arr] (proxy) -- node[lab,pos=0.45]{WebSocket} (ws);
+\draw[arr] (app) -- node[lab]{:9998} (bridge);
+\draw[arr] (judge) -- node[lab]{:9999} (bridge);
+\draw[arr] (bridge) -- node[lab,pos=0.5]{post event} (ws);
+\draw[arr] (app) -- (db);
+\draw[arr] (app) -- (redis);
+\draw[arr] (app) -- (store);
+\draw[arr] (celery) -- (redis);
+\draw[arr] (celery) -- (db);
+\draw[arr] (bridge) -- node[lab,pos=0.35]{ghi kết quả} (db);
+\draw[dsh] (judge) -- (bal);
+\draw[dsh] (bal) -- (bridge);
+\draw[dsh] (judge) -- node[lab,pos=0.5]{bản sao} (store);
+
+\begin{scope}[on background layer]
+ \node[plane,fill=web!25,fit=(user)(proxy)(app),label={[font=\scriptsize]left:Web}] {};
+ \node[plane,fill=dat!25,fit=(db)(redis)(store),label={[font=\scriptsize]below:Dữ liệu}] {};
+ \node[plane,fill=jud!25,fit=(bridge)(judge)(bal),label={[font=\scriptsize]above:Chấm bài}] {};
+\end{scope}
+\end{tikzpicture}
+\end{center}
+\small Hình 1. Kiến trúc tổng thể. Nét đứt = tuỳ chọn hoặc suy ra từ code. Cổng \c{:9998}: Django gửi \c{submission-request} cho \c{bridged}. Cổng \c{:9999}: judge là bên chủ động mở kết nối tới \c{bridged}, nên máy chấm không cần mở cổng ra ngoài. ``Bản sao'': judge đọc test data từ storage đã khai báo (cách đồng bộ chưa xác minh). \normalsize
+
+\section{Từng thành phần}
+Mỗi khối trả lời năm câu hỏi: làm gì, vì sao cần, thiếu thì sao, thay hoặc bỏ được không, và căn cứ ở đâu trong source.
+
+\subsection*{A. Mặt phẳng web}
+
+\comp{A1. Reverse proxy (nginx)}
+{Nhận HTTP(S) từ người dùng. Phục vụ file tĩnh \c{/static}. Chuyển request động sang uWSGI (\c{uwsgi\_pass}). Proxy WebSocket \c{/event/} và long-poll \c{/channels/} sang \c{wsevent}. Phục vụ file tải lớn do Django uỷ quyền (\c{X-Accel-Redirect}: \c{userdatacache}, \c{contestdatacache}).}
+{App server không nên phục vụ file tĩnh và giữ hàng nghìn kết nối WebSocket dài. Proxy cũng cho một địa chỉ duy nhất cho web và realtime.}
+{Site vẫn chạy được ở chế độ dev, nhưng mất: phục vụ static hiệu quả, đường vào chung cho WebSocket, tải file nội bộ. Production không nên bỏ.}
+{\textbf{Thay được}: Caddy, Traefik, Apache, load balancer của cloud, hoặc đặt sau CDN. Nếu bỏ uWSGI thì phải đổi \c{uwsgi\_pass} thành \c{proxy\_pass}. Repo \c{OJ} không bắt buộc nginx; nó chỉ là cách ghép trong ví dụ triển khai.}
+{\c{vnoj-docker/dmoj/nginx/conf.d/nginx.conf} (\textbf{2023, cũ}, chỉ dùng để minh hoạ). Cấu hình \c{DMOJ\_USER\_DATA\_INTERNAL} trong \c{dmoj/settings.py} xác nhận cơ chế \c{X-Accel-Redirect} vẫn còn.}
+
+\comp{A2. Django site (uWSGI + app \c{judge})}
+{Toàn bộ logic nghiệp vụ: tài khoản, bài tập, kỳ thi (các format: \c{default}, \c{ioi}, \c{legacy\_ioi}, \c{icpc}, \c{atcoder}, \c{ecoo}, \c{vnoj}), nộp bài, bảng xếp hạng, rating, ticket, blog, tổ chức, trang admin, API v2, OAuth (Django OAuth Toolkit). Khi có bài nộp, nó lưu vào DB rồi gửi yêu cầu chấm cho \c{bridged}.}
+{Đây là sản phẩm VNOJ. Mọi dữ liệu và luật nghiệp vụ nằm ở đây.}
+{Không còn hệ thống.}
+{\textbf{Không bỏ được.} Chỉ lớp phục vụ WSGI là thay được (uWSGI $\leftrightarrow$ gunicorn). Có hai chế độ vận hành đặc biệt trong cấu hình: \c{VNOJ\_LOW\_POWER\_MODE} (giới hạn truy vấn nặng khi tải cao) và \c{VNOJ\_OFFICIAL\_CONTEST\_MODE} (tắt một số tính năng khi thi chính thức).}
+{\c{judge/}, \c{dmoj/settings.py}, \c{dmoj/wsgi.py}, \c{judge/contest\_format/}.}
+
+\subsection*{B. Mặt phẳng dữ liệu}
+
+\comp{B1. MySQL / MariaDB}
+{Nguồn dữ liệu duy nhất (source of truth): user, problem, submission, từng test case, tham gia kỳ thi, bảng \c{Judge} (tên, \c{auth\_key}, tier, online), ngôn ngữ. \textbf{Cả Django lẫn \c{bridged} đều ghi vào đây}; \c{bridged} cũng đọc bảng \c{Judge} để xác thực máy chấm.}
+{Cần lưu trạng thái bền vững, truy vấn quan hệ và giao dịch. Hai tiến trình (site, bridged) dùng chung trạng thái qua DB.}
+{Không chạy được.}
+{\textbf{Không bỏ được.} Thay thế thực tế: MariaDB hay MySQL. File cấu hình mẫu ghi ``only MySQL is supported'' và các \c{contest\_format} chứa SQL thô, nên đổi sang DB khác cần kiểm tra kỹ. SQLite chỉ là mặc định cho dev/CI.}
+{\c{dmoj/settings.py} (\c{DATABASES}), \c{judge/models/}, \c{judge/bridge/judge\_handler.py} (\c{\_authenticate}).}
+
+\comp{B2. Redis}
+{Ba việc: (1) cache của Django (\c{django\_redis}); (2) lưu session (\c{SESSION\_ENGINE = cached\_db}); (3) broker và result backend của Celery.}
+{Giảm tải DB (ví dụ cache thanh điều hướng, danh sách bài). Celery cần một hàng đợi trung gian giữa web và worker.}
+{Không có cache dùng chung thì mỗi tiến trình uWSGI có cache riêng, dẫn đến dữ liệu không nhất quán. Không có broker thì Celery không chạy.}
+{\textbf{Thay được} nhưng phải đổi cả ba chỗ: cache sang memcached (README của OJ nhắc memcached hoặc Redis); broker sang RabbitMQ (repo có \c{pika} và \c{event\_poster\_amqp.py}); session có thể dùng DB thuần.}
+{\c{dmoj/settings.py} (\c{CACHES}, \c{SESSION\_ENGINE}), \c{CELERY\_BROKER\_URL} trong cấu hình triển khai.}
+
+\comp{B3. Kho dữ liệu đề (Problem data storage)}
+{Lưu test data của bài (file \c{init.yml}, \c{.in}/\c{.out}, archive). Có hai backend: \c{filesystem} và \c{s3}, chọn qua \c{DMOJ\_STORAGE\_CONFIG\_PATH} (YAML) hoặc \c{DMOJ\_PROBLEM\_DATA\_ROOT}. Site lưu metadata để khỏi đọc archive ở mỗi lần xem. Khi gửi yêu cầu chấm, site kèm trường \c{storage} (\c{problem.effective\_storage}); judge chỉ nhận bài khi đã khai báo storage đó lúc handshake.}
+{Judge phải có test data để so sánh output; site cần nơi để người ra đề tải lên.}
+{Không có test data thì không chấm được.}
+{\textbf{Thay được}: filesystem cục bộ, thư mục dùng chung (NFS), hoặc S3. Có thêm dịch vụ lưu trữ ngoài tuỳ chọn (\c{VNOJ\_PROBLEM\_ARCHIVE\_SERVICE\_URL}). \textbf{Chưa xác minh}: cơ chế đồng bộ dữ liệu từ site sang máy chấm trong production (bản sao cục bộ trên judge hay đọc chung).}
+{\c{judge/utils/problem\_data\_storage.py}; commit ``support S3 storage for problem data'' (26/09/2026); \c{judge/bridge/judge\_handler.py} (\c{can\_judge}).}
+
+\subsection*{C. Bất đồng bộ và thời gian thực}
+
+\comp{C1. Celery worker + beat}
+{Chạy các việc nặng hoặc định kỳ ngoài request web. Tác vụ: rejudge hàng loạt (\c{rejudge\_problem\_filter}), tính lại điểm (\c{rescore\_problem}, \c{rescore\_contest}), chạy MOSS (\c{run\_moss}), xuất dữ liệu (\c{prepare\_contest\_data}, \c{prepare\_user\_data}), thông báo kỳ thi, webhook Discord. \textbf{Beat} có 4 lịch: \c{queue\_time\_stats} (hằng ngày), \c{problem\_garbage\_collect}, \c{update\_hot\_problems} (10 phút/lần), \c{organization\_monthly\_reset} (đầu tháng).}
+{Các việc này chạy lâu; đặt trong request web sẽ làm treo trang. Việc định kỳ cần một bộ lập lịch.}
+{\textbf{Chấm bài vẫn chạy bình thường}, vì đường chấm đi thẳng Django $\to$ \c{bridged} bằng TCP, không qua Celery. Mất: rejudge hàng loạt, rescore, export, MOSS, webhook, và danh sách ``hot problems'' không được cập nhật (từ 20/10/2026 nó được tính bằng beat).}
+{\textbf{Bỏ được ở mức site tối thiểu}, không nên bỏ ở production. Thay thế: cron + \c{manage.py}; hoặc chạy task đồng bộ (tính năng \c{task\_always\_eager} của Celery, chưa thử trên VNOJ). Lưu ý: ví dụ \c{vnoj-docker} cũ chỉ chạy \c{worker}, \textbf{không có beat}, nên cấu hình triển khai theo ví dụ đó sẽ không chạy các lịch trên.}
+{\c{dmoj/celery.py} (\c{beat\_schedule}), \c{judge/tasks/*.py}; \c{vnoj-docker/dmoj/celery/Dockerfile} (2023).}
+
+\comp{C2. wsevent (event server, Node.js)}
+{Đẩy sự kiện đến trình duyệt theo thời gian thực. Có ba cổng: \c{15100} (trình duyệt nhận qua WebSocket), \c{15101} (Django và \c{bridged} gửi sự kiện vào), \c{15102} (long-poll dự phòng). Kênh dùng: \c{sub\_<secret>} (một bài nộp), \c{submissions}, \c{contest\_<id>}, ticket, thông báo. Giữ vài chục tin gần nhất trong RAM để client bắt kịp.}
+{Người dùng thấy bài nộp chuyển \emph{Queued $\to$ Grading $\to$ kết quả từng test} mà không phải tải lại trang; bảng xếp hạng kỳ thi tự cập nhật.}
+{Nếu đặt \c{EVENT\_DAEMON\_USE = False}, hàm \c{post()} thành no-op. Site và chấm bài vẫn đúng, chỉ mất cập nhật trực tiếp (phải F5).}
+{\textbf{Bỏ được} mà không ảnh hưởng tính đúng. Thay thế có sẵn trong repo: đường AMQP (\c{event\_poster\_amqp.py}, dùng RabbitMQ). Có thể thay bằng polling phía trình duyệt, nhưng sẽ tăng tải lên web.}
+{\c{judge/event\_poster.py}, \c{websocket/daemon.js}, \c{dmoj/settings.py} (\c{EVENT\_DAEMON\_*}).}
+
+\subsection*{D. Mặt phẳng chấm bài}
+
+\comp{D1. \c{bridged} (cầu nối chấm bài)}
+{Chạy bằng \c{manage.py runbridged}. Mở \textbf{hai server TCP}: cổng \c{9998} dành cho Django (nhận \c{submission-request}, \c{terminate-submission}, \c{disconnect-judge}, \c{disable-judge}) và cổng \c{9999} dành cho máy chấm. Việc chính:
+\begin{itemize}[nosep,leftmargin=1.2em]
+\item \textbf{Xác thực} judge (handshake, so \c{auth\_key} trong DB; chỉ nhận protocol version $\ge 2$).
+\item \textbf{Hàng đợi ưu tiên} 4 mức: thi (0) $>$ thường (1) $>$ rejudge (2) $>$ rejudge hàng loạt (3); có khái niệm \emph{tier} của judge và giữ lại một judge rảnh khỏi rejudge.
+\item \textbf{Ghép} bài nộp với judge phù hợp (đúng storage, đúng ngôn ngữ, không bị cấm trong kỳ thi), gắn thời gian/bộ nhớ giới hạn lấy từ DB.
+\item \textbf{Ping}, phát hiện judge im lặng (20 giây không ack thì ngắt).
+\item \textbf{Nhận kết quả và ghi DB}: tạo \c{SubmissionTestCase}, gộp batch, tính điểm tổng, cập nhật điểm người dùng, thống kê bài, điểm kỳ thi, rồi gửi sự kiện cho \c{wsevent}.
+\end{itemize}}
+{Judge không nối thẳng DB và không nên tin cậy. Cần một cổng xác thực và điều phối trung tâm, và cần một nơi \textbf{tổng hợp verdict}. Chú ý: verdict và điểm cuối cùng do \c{bridged} tính, không phải judge.}
+{\textbf{Không có chấm bài}: bài nộp sẽ không bao giờ rời trạng thái \emph{Queued}. Phần còn lại của site vẫn hoạt động.}
+{\textbf{Không bỏ được.} Trong repo không có phương án thay thế; protocol của judge-server gắn với nó. Về nguyên tắc có thể thiết kế lại bằng hàng đợi thông điệp (RabbitMQ/Kafka) và judge kéo việc, nhưng phải viết lại cả hai phía. \textbf{Rủi ro thiết kế}: hàng đợi nằm trong RAM của một tiến trình (điểm lỗi đơn). Khi khởi động, nó đặt mọi judge \c{online=False} và chuyển các bài ở trạng thái \c{QU/P/G} sang \c{IE}.}
+{\c{judge/bridge/daemon.py}, \c{django\_handler.py}, \c{judge\_handler.py}, \c{judge\_list.py}, \c{judge/judge\_priority.py}, \c{judge/judgeapi.py}.}
+
+\comp{D2. Judge server (\c{judge-server}, image \c{tier-vnoj})}
+{Một tiến trình chạy trên máy chấm. Nó \textbf{kết nối ra} \c{bridged}, gửi handshake (\c{id}, \c{key}, danh sách executor và phiên bản runtime, danh sách storage), rồi chờ \c{submission-request}. Với mỗi bài: biên dịch, chạy từng test \textbf{trong sandbox} (ptrace, \c{cptbox}), cho checker so output, rồi gửi lại các gói \c{grading-begin}, \c{compile-message} hoặc \c{compile-error}, \c{test-case-status} (từng test), \c{grading-end}, \c{internal-error}. Có thể chạy nhiều judge song song. Image \c{vnoj/judge-tiervnoj} = runtimes tier 1 (C/C++, Python, Java 8, Pascal) + OpenJDK 25, Go, Kotlin, Rust, PyPy2, \c{scratch-run}, \c{testlib}.}
+{Chạy code của thí sinh là việc nguy hiểm và nặng CPU; tách ra máy riêng có sandbox giúp cô lập rủi ro và mở rộng ngang bằng cách thêm máy.}
+{Bài nộp ở lại \emph{Queued} cho đến khi có một judge kết nối.}
+{\textbf{Không bỏ được}, nhưng số lượng và cách đặt thì linh hoạt (0 đến $N$). Sandbox: bản \c{master} dùng ptrace; các nhánh \c{hiep/landlock} và \c{feat/microvm-api-judge} là hướng thay thế \textbf{chưa merge}. \textbf{Lưu ý cấu hình}: protocol v1 bị site từ chối; judge phải đặt \c{judge\_version: 2} và khai báo \c{problem\_storage\_globs} theo \c{id}/\c{glob}. (Bản web test ở phần trước chạy chế độ v1 cục bộ, không nối với site.)}
+{\c{dmoj/judge.py}, \c{dmoj/packet.py}, \c{dmoj/judgeenv.py}, \c{dmoj/cptbox/}, \c{.docker/tiervnoj/Dockerfile}.}
+
+\comp{D3. Balancer (tuỳ chọn)}
+{Chạy bằng \c{manage.py runbalancer}. Nó đứng giữa: judge kết nối vào balancer (cổng \c{8888}) như thể đó là \c{bridged}, còn balancer kết nối ra \emph{nhiều} \c{bridged} khác nhau (mỗi bridge một cặp \c{id}/\c{key}) và ghép một judge với một bridge tại một thời điểm.}
+{Cho phép một dàn máy chấm dùng chung phục vụ nhiều site hoặc nhiều kỳ thi mà không phải cấu hình lại từng judge. \textit{(Suy ra từ code; chưa có tài liệu mô tả.)}}
+{Không ảnh hưởng nếu chỉ có một site: judge nối thẳng \c{bridged}.}
+{\textbf{Bỏ được} với hệ thống một site.}
+{\c{judge/balancer/*.py}, \c{judge/management/commands/runbalancer.py}.}
+
+\subsection*{E. Dịch vụ ngoài (đều tuỳ chọn)}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright}p{3.6cm}X>{\raggedright\arraybackslash}p{4.2cm}@{}}
+\toprule
+Dịch vụ & Làm gì & Nếu không có \\
+\midrule
+PDF (\c{pdfoid}, \c{DMOJ\_PDF\_PDFOID\_URL}) & Dịch vụ ngoài render đề bài ra PDF. & Site không tự render PDF từ đề. (Đề vẫn có thể đính kèm file PDF có sẵn: commit 27/10/2026 cho phép xoá PDF statement trong form sửa bài.) \\
+Archive service (\c{VNOJ\_PROBLEM\_ARCHIVE\_SERVICE\_URL}) & Dịch vụ ngoài xử lý lưu trữ gói đề. & Dùng storage thường. \\
+MOSS (\c{MOSS\_API\_KEY}) & Kiểm tra đạo văn code. & Mất tính năng chống đạo văn. \\
+Discord webhook & Thông báo ticket, bài mới, kỳ thi, hàng đợi dài. & Mất thông báo. \\
+Email (SMTP) & Đăng ký, đặt lại mật khẩu. & Không gửi được email. \\
+Pandoc (trong image site) & Dùng khi nhập gói Polygon (\c{judge/utils/codeforces\_polygon.py}). & Không nhập được gói Polygon. \\
+\bottomrule
+\end{tabularx}
+
+\section{Luồng một bài nộp qua kiến trúc}
+\begin{center}
+\begin{tikzpicture}[
+  life/.style={draw=black!35,dashed},
+  hd/.style={draw,rounded corners=2pt,minimum width=2.2cm,minimum height=0.7cm,align=center,font=\footnotesize,fill=black!6},
+  m/.style={-{Stealth[length=2mm]},line width=0.5pt},
+  t/.style={font=\scriptsize,above,inner sep=1.5pt,align=center},
+  note/.style={draw,rounded corners=2pt,fill=asy,font=\scriptsize,inner sep=3pt,align=center}
+]
+\node[hd] (b) at (0,0) {Trình duyệt};
+\node[hd] (d) at (3.4,0) {Django};
+\node[hd] (g) at (6.8,0) {\c{bridged}};
+\node[hd] (j) at (10.2,0) {Judge};
+\node[hd] (w) at (13.6,0) {DB / wsevent};
+\foreach \n in {b,d,g,j,w} \draw[life] (\n.south) -- ++(0,-10.2);
+\draw[m] (0,-1.2) -- node[t,midway]{1. nộp code} (3.4,-1.2);
+\draw[m] (3.4,-2.2) -- node[t,pos=0.5]{2. lưu \c{Submission}, status \c{QU}} (13.6,-2.2);
+\draw[m] (3.4,-3.2) -- node[t,midway]{3. \c{submission-request} :9998} (6.8,-3.2);
+\node[note] at (6.8,-4.1) {4. xếp hàng ưu tiên,\\chọn judge phù hợp};
+\draw[m] (6.8,-5.0) -- node[t,midway]{5. \c{submission-request}} (10.2,-5.0);
+\node[note] at (10.2,-5.95) {6. biên dịch, chạy từng\\test trong sandbox};
+\draw[m] (10.2,-7.0) -- node[t,midway]{7. \c{test-case-status}, \c{grading-end}} (6.8,-7.0);
+\draw[m] (6.8,-8.1) -- node[t,pos=0.5]{8. ghi test case, tính verdict + điểm} (13.6,-8.0);
+\draw[m] (6.8,-9.0) -- node[t,pos=0.5]{9. post event} (13.6,-9.0);
+\draw[m] (13.6,-10.0) -- node[t,pos=0.5]{10. cập nhật trang (WebSocket)} (0,-10.0);
+\end{tikzpicture}
+\end{center}
+\small Hình 2. Vòng đời một bài nộp. Bước 2 và 8 cùng ghi vào DB; bước 8 do \c{bridged} thực hiện chứ không phải Django hay judge. \normalsize
+
+\section{Bảng quyết định: bỏ hay thay?}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright}p{3.3cm}>{\centering}p{2.2cm}>{\raggedright}X>{\raggedright\arraybackslash}p{4.3cm}@{}}
+\toprule
+Thành phần & Bắt buộc? & Nếu bỏ thì mất gì & Thay bằng \\
+\midrule
+Django site & \textbf{Có} & Mất toàn bộ hệ thống & Không \\
+DB (MySQL/MariaDB) & \textbf{Có} & Không chạy được & MariaDB $\leftrightarrow$ MySQL \\
+\c{bridged} & \textbf{Có} (để chấm) & Bài nộp mãi ở \emph{Queued} & Không có trong repo \\
+Judge server & \textbf{Có} (để chấm) & Như trên & Không; sandbox khác còn ở nhánh chưa merge \\
+Kho test data & \textbf{Có} (để chấm) & Không có dữ liệu để so & Filesystem, NFS, S3 \\
+Reverse proxy & Production có & Mất static, WS, tải nội bộ & Caddy, Traefik, Apache, LB cloud \\
+Redis & Thực tế có & Cache và session lệch giữa tiến trình, không có broker & memcached + RabbitMQ \\
+Celery (worker + beat) & Không & Mất rejudge hàng loạt, rescore, export, MOSS, hot problems, thông báo & cron + \c{manage.py}; chạy eager \\
+wsevent & Không & Mất cập nhật trực tiếp, đúng/sai vẫn đúng & AMQP (RabbitMQ), polling \\
+Balancer & Không & Chỉ ảnh hưởng khi dùng chung judge cho nhiều site & Judge nối thẳng \c{bridged} \\
+PDF, MOSS, Discord, Email & Không & Mất từng tính năng riêng & Không thay hoặc bỏ \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Điểm cần lưu ý về kiến trúc}
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+\item \textbf{\c{bridged} là điểm lỗi đơn.} Hàng đợi nằm trong RAM; khởi động lại sẽ đặt mọi bài đang \c{QU/P/G} thành \c{IE} (cần rejudge).
+\item \textbf{Verdict do \c{bridged} tổng hợp}, nên lỗi tính điểm hoặc batch nằm ở site, không ở judge-server.
+\item \textbf{Phải chạy Celery beat} nếu muốn các lịch trong \c{dmoj/celery.py} hoạt động; cấu hình theo ví dụ \c{vnoj-docker} cũ không có beat.
+\item \textbf{Khoá mặc định trong \c{settings.py}} (\c{EVENT\_DAEMON\_*\_KEY}, \c{GLOBAL\_API\_KEY = 'test-api-key-123'}) là giá trị mẫu; production phải ghi đè trong \c{local\_settings.py}.
+\item \textbf{Phiên bản protocol}: site từ chối judge v1. Judge-server mặc định \c{judge\_version} là 1, nên phải đặt tường minh bằng 2.
+\item \textbf{Phần chưa xác minh}: cách đồng bộ test data tới từng máy chấm, số lượng và vị trí máy chấm của VNOI, và việc VNOI có chạy balancer hay không.
+\end{enumerate}
+
+\end{document}

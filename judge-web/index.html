@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VNOJ Judge – Trang test</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--fg:#1c2330;--mut:#667085;--bd:#dfe3ea;--pri:#2457d6;--code:#f1f3f7;
+        --ac:#18794e;--wa:#c42b2b;--tle:#8a5a00;--rte:#9333ea;--ce:#555;--ie:#c42b2b}
+  @media (prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1b2029;--fg:#e6e9ef;--mut:#98a2b3;--bd:#2c3340;--pri:#6b94ff;--code:#11141a;
+        --ac:#4ade80;--wa:#ff7b7b;--tle:#f5b84a;--rte:#c58bff;--ce:#aaa;--ie:#ff7b7b}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  main{max-width:1060px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:22px;margin:4px 0 2px} h2{font-size:17px;margin:0 0 10px} h3{font-size:14px;margin:14px 0 6px}
+  .sub{color:var(--mut);margin:0 0 18px}
+  section{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:16px}
+  pre,textarea,code{font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  pre{background:var(--code);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin:4px 0;overflow:auto;white-space:pre-wrap;word-break:break-all;max-height:320px}
+  code{background:var(--code);padding:1px 5px;border-radius:4px}
+  textarea{width:100%;min-height:240px;background:var(--code);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:10px;resize:vertical;tab-size:4}
+  select,input{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:6px 8px;font:inherit}
+  button{background:var(--pri);color:#fff;border:0;border-radius:6px;padding:8px 16px;font:inherit;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.55;cursor:wait} button.sec{background:transparent;color:var(--pri);border:1px solid var(--pri);font-weight:500;padding:5px 10px}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:8px 0}
+  label{display:flex;flex-direction:column;font-size:13px;color:var(--mut);gap:3px}
+  table{border-collapse:collapse;width:100%} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd);vertical-align:top;font-size:14px}
+  th{color:var(--mut);font-weight:600;font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 18px}
+  .kv b{display:block;color:var(--mut);font-size:12px;font-weight:600} .kv span{word-break:break-word}
+  .v{display:inline-block;padding:1px 9px;border-radius:99px;font-weight:700;font-size:13px;border:1px solid currentColor}
+  .AC{color:var(--ac)}.WA{color:var(--wa)}.TLE{color:var(--tle)}.MLE{color:var(--tle)}.OLE{color:var(--tle)}.RTE{color:var(--rte)}.IR{color:var(--rte)}.CE{color:var(--ce)}.IE{color:var(--ie)}.SC{color:var(--mut)}
+  .big{font-size:26px;font-weight:800}
+  details{border:1px solid var(--bd);border-radius:8px;margin:8px 0;padding:6px 10px} summary{cursor:pointer;font-weight:600}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px} @media(max-width:700px){.two{grid-template-columns:1fr}}
+  .mut{color:var(--mut)} .err{color:var(--wa)} .hist td{cursor:pointer}
+  .tag{font-size:11px;background:var(--code);border:1px solid var(--bd);border-radius:4px;padding:0 5px;margin:1px;display:inline-block}
+</style>
+</head>
+<body>
+<main>
+  <h1>VNOJ Judge – trang test</h1>
+  <p class="sub">Giao diện web nhỏ chạy trên <code>vnoj/judge-tiervnoj</code> (VNOI-Admin/judge-server). Nộp code, judge chấm bằng sandbox thật và hiển thị toàn bộ chi tiết.</p>
+
+  <section id="s-judge"><h2>1. Thông tin judge</h2><div id="judge-info" class="grid mut">Đang tải…</div>
+    <h3>Ngôn ngữ / runtime khả dụng (<span id="n-exec">0</span>)</h3>
+    <div id="exec-table"></div>
+  </section>
+
+  <section id="s-io"><h2>1b. Judge hoạt động thế nào: đầu vào &amp; đầu ra đầy đủ</h2>
+
+    <h3>A. Đầu vào của judge (một lần nộp bài)</h3>
+    <table><thead><tr><th>Trường</th><th>Ví dụ</th><th>Ý nghĩa</th></tr></thead><tbody>
+      <tr><td><code>submission_id</code></td><td>1</td><td>Số thứ tự lượt nộp.</td></tr>
+      <tr><td><code>problem_id</code></td><td>aplusb</td><td>Tên thư mục bài trong <code>/problems/</code>. Judge đọc <code>init.yml</code> trong đó.</td></tr>
+      <tr><td><code>language</code></td><td>CPP17</td><td>ID executor (xem bảng ngôn ngữ ở trên), quyết định cách biên dịch và chạy.</td></tr>
+      <tr><td><code>source</code></td><td>mã nguồn dạng text</td><td>Judge ghi ra file tạm (đuôi theo ngôn ngữ) rồi biên dịch.</td></tr>
+      <tr><td><code>time_limit</code></td><td>2.0 (giây)</td><td>Giới hạn CPU time cho mỗi test.</td></tr>
+      <tr><td><code>memory_limit</code></td><td>65536 (KB)</td><td>Giới hạn bộ nhớ cho mỗi test.</td></tr>
+    </tbody></table>
+
+    <h3>B. Dữ liệu bài toán judge phải có sẵn (trên đĩa)</h3>
+    <pre>/problems/aplusb/
+├── init.yml          ← cấu hình: danh sách test, điểm, checker...
+├── aplusb.1.in       ← input test 1  (được đưa vào stdin của chương trình)
+├── aplusb.1.out      ← output đúng test 1 (dùng để so sánh)
+├── aplusb.2.in / .out
+└── aplusb.3.in / .out</pre>
+    <p class="mut">Các khóa hay dùng trong <code>init.yml</code>: <code>test_cases</code> (mỗi phần tử <code>in</code>, <code>out</code>, <code>points</code>, hoặc <code>batched</code> để gom test thành nhóm),
+      <code>archive</code> (file zip chứa dữ liệu), <code>checker</code> (cách so output), <code>generator</code>, <code>output_prefix_length</code>, <code>binary_data</code>, <code>hints</code>, <code>symlinks</code>, <code>pretest_test_cases</code>.
+      Các chế độ chấm khác (grader): standard, interactive, signature, output-only, custom/bridged checker.</p>
+
+    <h3>C. Judge xử lý một test (vào gì, ra gì)</h3>
+    <table><thead><tr><th>Bước</th><th>Vào</th><th>Ra</th></tr></thead><tbody>
+      <tr><td>1. Biên dịch</td><td><code>source</code> + executor</td><td>File thực thi. Nếu lỗi → <b>CE</b> kèm log (dừng, không chạy test). Cảnh báo → <i>compile message</i>.</td></tr>
+      <tr><td>2. Chạy trong sandbox</td><td>Nội dung <code>.in</code> → <b>stdin</b>; giới hạn TL / ML</td><td><b>stdout</b> của chương trình; mã thoát / tín hiệu; CPU time, wall time, bộ nhớ đỉnh, context switch</td></tr>
+      <tr><td>3. Checker</td><td>stdout thí sinh + nội dung <code>.out</code></td><td>Đúng/sai (+ điểm từng phần nếu checker hỗ trợ) và feedback. Checker mặc định so từng token, bỏ qua khoảng trắng thừa.</td></tr>
+      <tr><td>4. Tổng hợp</td><td>Kết quả từng test + điểm trong <code>init.yml</code></td><td>Verdict từng test, điểm từng test, tổng điểm.</td></tr>
+    </tbody></table>
+    <p class="mut">Chương trình thí sinh chỉ có <b>stdin → stdout</b>: không nhận tham số dòng lệnh, không được mở/ghi file tùy ý, không được mạng, không fork. stderr bị bỏ qua (chỉ dùng để suy ra feedback khi crash).</p>
+
+    <h3>D. Đầu ra của judge</h3>
+    <p><b>Mỗi test case</b> (<code>test_case_status_packet</code>):</p>
+    <table><thead><tr><th>Trường</th><th>Ý nghĩa</th></tr></thead><tbody>
+      <tr><td><code>codes</code></td><td>Danh sách verdict, phần tử đầu là chính (xem bảng bên dưới). Có thể kèm cờ phụ, ví dụ <code>["IR","WA"]</code>.</td></tr>
+      <tr><td><code>time</code> / <code>wall_time</code></td><td>CPU time / thời gian thực (giây).</td></tr>
+      <tr><td><code>memory_kb</code></td><td>Bộ nhớ đỉnh (KB).</td></tr>
+      <tr><td><code>points</code> / <code>total_points</code></td><td>Điểm đạt được / điểm tối đa của test.</td></tr>
+      <tr><td><code>feedback</code></td><td>Lý do ngắn: <code>segmentation fault</code>, <code>Exit code 3</code>, <code>std::bad_alloc</code>…</td></tr>
+      <tr><td><code>extended_feedback</code></td><td>Thông tin thêm từ checker (ví dụ <code>1 token(s)</code>).</td></tr>
+      <tr><td><code>output</code></td><td>Phần đầu stdout của chương trình (cắt theo <code>output_prefix_length</code>, mặc định 128 byte).</td></tr>
+      <tr><td><code>context_switches</code>, <code>runtime_version</code></td><td>[tổng, cưỡng bức]; phiên bản runtime đã dùng.</td></tr>
+    </tbody></table>
+    <p><b>Toàn bài nộp:</b> <code>begin_grading</code> → (<code>compile_message</code> | <code>compile_error</code>) → các <code>test_case_status</code> (có thể trong <code>batch_begin/batch_end</code>) → <code>grading_end</code>; lỗi nội bộ thì <code>internal_error</code>; hủy thì <code>submission_aborted</code>.
+      Trang web gom hết thành một JSON: <code>verdict</code>, <code>points</code>, <code>total_points</code>, <code>grading_seconds</code>, <code>compile_error</code>, <code>compile_message</code>, <code>internal_error</code>, <code>cases[]</code>, <code>log</code>.</p>
+
+    <h3>E. Bảng verdict</h3>
+    <table><thead><tr><th>Mã</th><th>Khi nào</th></tr></thead><tbody>
+      <tr><td><span class="v AC">AC</span></td><td>Output khớp đáp án, không vi phạm giới hạn.</td></tr>
+      <tr><td><span class="v WA">WA</span></td><td>Chương trình chạy xong nhưng output sai.</td></tr>
+      <tr><td><span class="v TLE">TLE</span></td><td>Vượt time limit.</td></tr>
+      <tr><td><span class="v MLE">MLE</span></td><td>Vượt memory limit.</td></tr>
+      <tr><td><span class="v OLE">OLE</span></td><td>In quá nhiều output (giới hạn mặc định 24 MB).</td></tr>
+      <tr><td><span class="v RTE">RTE</span></td><td>Bị signal (segfault, abort…) hoặc vi phạm sandbox.</td></tr>
+      <tr><td><span class="v IR">IR</span></td><td>Invalid Return: thoát với exit code ≠ 0.</td></tr>
+      <tr><td><span class="v CE">CE</span></td><td>Biên dịch thất bại (không có test nào chạy).</td></tr>
+      <tr><td><span class="v SC">SC</span></td><td>Bỏ qua do short-circuit (batch đã có test sai).</td></tr>
+      <tr><td><span class="v IE">IE</span></td><td>Lỗi nội bộ của judge.</td></tr>
+    </tbody></table>
+
+    <h3>F. API của trang web này (bọc ngoài judge)</h3>
+    <p><code>POST /api/submit</code> nhận:</p>
+    <pre>{"problem":"aplusb","language":"CPP17","source":"...","time_limit":2,"memory_limit":65536}</pre>
+    <p>và trả JSON kết quả như mục D. <code>GET /api/info</code> trả thông tin judge, danh sách runtime và dữ liệu bài.
+      Ở phần “Kết quả chấm” bên dưới có mục <b>JSON thô</b> để xem đúng request / response của lần chấm gần nhất.</p>
+  </section>
+
+  <section id="s-problem"><h2>2. Đề bài</h2><div id="problem"></div></section>
+
+  <section id="s-submit"><h2>3. Nộp bài</h2>
+    <div class="row">
+      <label>Bài <select id="problem-sel"></select></label>
+      <label>Ngôn ngữ <select id="lang"></select></label>
+      <label>Time limit (giây) <input id="tl" type="number" value="2" min="0.1" max="20" step="0.1" style="width:90px"></label>
+      <label>Memory limit (KB) <input id="ml" type="number" value="65536" min="1024" step="1024" style="width:120px"></label>
+      <label>Code mẫu <select id="preset"></select></label>
+    </div>
+    <textarea id="source" spellcheck="false"></textarea>
+    <div class="row"><button id="go">Nộp &amp; chấm</button><span id="status" class="mut"></span></div>
+  </section>
+
+  <section id="s-result" hidden><h2>4. Kết quả chấm</h2><div id="result"></div></section>
+
+  <section id="s-hist" hidden><h2>Lịch sử (phiên này)</h2>
+    <table class="hist"><thead><tr><th>#</th><th>Bài</th><th>Ngôn ngữ</th><th>Kết quả</th><th>Điểm</th></tr></thead><tbody id="hist"></tbody></table>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pre = s => `<pre>${esc(s === '' ? '(rỗng)' : s)}</pre>`;
+const VERDICT_TEXT = {AC:'Accepted',WA:'Wrong Answer',TLE:'Time Limit Exceeded',MLE:'Memory Limit Exceeded',OLE:'Output Limit Exceeded',
+  RTE:'Runtime Error',IR:'Invalid Return',CE:'Compile Error',IE:'Internal Error',SC:'Skipped (short-circuit)'};
+const badge = c => `<span class="v ${c}" title="${esc(VERDICT_TEXT[c]||c)}">${esc(c)}</span>`;
+let INFO = null, history = [], lastReq = null;
+
+/* ---- sample submissions (read A and B from stdin, print A+B) ---- */
+const S = {
+ cpp:`#include <bits/stdc++.h>
+using namespace std;
+int main() {
+    long long a, b;
+    cin >> a >> b;
+    cout << a + b << "\\n";
+}`,
+ c:`#include <stdio.h>
+int main() {
+    long long a, b;
+    scanf("%lld %lld", &a, &b);
+    printf("%lld\\n", a + b);
+    return 0;
+}`,
+ py:`a, b = map(int, input().split())
+print(a + b)`,
+ java:`import java.util.*;
+public class Main {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        long a = sc.nextLong(), b = sc.nextLong();
+        System.out.println(a + b);
+    }
+}`,
+ rust:`use std::io::*;
+fn main() {
+    let mut s = String::new();
+    stdin().read_to_string(&mut s).unwrap();
+    let v: Vec<i64> = s.split_whitespace().map(|x| x.parse().unwrap()).collect();
+    println!("{}", v[0] + v[1]);
+}`,
+ go:`package main
+import "fmt"
+func main() {
+    var a, b int64
+    fmt.Scan(&a, &b)
+    fmt.Println(a + b)
+}`,
+ kotlin:`fun main() {
+    val (a, b) = readLine()!!.split(" ").map { it.toLong() }
+    println(a + b)
+}`,
+ pas:`var a, b: int64;
+begin
+  readln(a, b);
+  writeln(a + b);
+end.`,
+ perl:`my ($a, $b) = split ' ', <STDIN>;
+print $a + $b, "\\n";`,
+};
+const PRESETS = [
+ {name:'C++17 – đúng (AC)', lang:'CPP17', src:S.cpp},
+ {name:'C++17 – sai (WA: dùng int 32-bit)', lang:'CPP17', src:`#include <bits/stdc++.h>
+int main() {
+    int a, b;            // tràn số ở test 3 -> WA
+    std::cin >> a >> b;
+    std::cout << a + b << "\\n";
+}`},
+ {name:'C++17 – quá giờ (TLE)', lang:'CPP17', src:`#include <bits/stdc++.h>
+int main() {
+    volatile long long x = 0;
+    while (true) x++;
+}`},
+ {name:'C++17 – lỗi runtime (RTE: segfault)', lang:'CPP17', src:`int main() {
+    volatile int *p = nullptr;
+    *p = 1;              // SIGSEGV
+}`},
+ {name:'C++17 – quá bộ nhớ (MLE)', lang:'CPP17', src:`#include <bits/stdc++.h>
+int main() {
+    std::vector<char> v(512u << 20, 1);   // 512 MB
+    long long s = 0; for (char c : v) s += c;
+    std::cout << s << "\\n";
+}`},
+ {name:'C++17 – lỗi biên dịch (CE)', lang:'CPP17', src:`int main() { this_is_not_valid }`},
+ {name:'C++17 – thoát với exit code ≠ 0 (IR)', lang:'CPP17', src:`int main() {
+    return 3;
+}`},
+ {name:'C++17 – in vô hạn (OLE)', lang:'CPP17', src:`#include <cstdio>
+int main() {
+    while (true) puts("spam spam spam spam spam spam spam spam");
+}`},
+ {name:'C – đúng (AC)', lang:'C11', src:S.c},
+ {name:'Python 3 – đúng (AC)', lang:'PY3', src:S.py},
+ {name:'PyPy 3 – đúng (AC, cần ML 256MB)', lang:'PYPY3', src:S.py, ml:262144},
+ {name:'Java – đúng (AC)', lang:'JAVA', src:S.java},
+ {name:'Rust – đúng (AC)', lang:'RUST', src:S.rust},
+ {name:'Go – đúng (AC)', lang:'GO', src:S.go},
+ {name:'Kotlin – đúng (AC)', lang:'KOTLIN', src:S.kotlin},
+ {name:'Pascal – đúng (AC)', lang:'PAS', src:S.pas},
+ {name:'Perl – đúng (AC)', lang:'PERL', src:S.perl},
+];
+
+/* ---- info ---- */
+function kv(k, v){ return `<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`; }
+
+function renderInfo(){
+  const j = INFO.judge;
+  $('judge-info').className = 'grid';
+  $('judge-info').innerHTML =
+    kv('Nguồn', j.source) + kv('Phiên bản dmoj', j.dmoj_version) + kv('Python (judge)', j.python) +
+    kv('Kernel / kiến trúc', `${j.kernel} / ${j.arch}`) + kv('Chạy trong Docker', j.in_docker ? 'có (cap SYS_PTRACE)' : 'không') +
+    kv('File cấu hình', j.config_file) + kv('problem_storage_globs', j.problem_storage_globs.join(', ')) +
+    kv('Số bài chấm từ khi khởi động', j.submissions_graded_total);
+  $('n-exec').textContent = INFO.executors.length;
+  $('exec-table').innerHTML = '<table><thead><tr><th>ID</th><th>Đuôi file</th><th>Runtime / phiên bản</th></tr></thead><tbody>' +
+    INFO.executors.map(e => `<tr><td><b>${esc(e.id)}</b></td><td>.${esc(e.ext)}</td><td>${esc(e.versions.join(', '))}</td></tr>`).join('') + '</tbody></table>';
+  $('lang').innerHTML = INFO.executors.map(e => `<option value="${esc(e.id)}">${esc(e.id)} (${esc(e.versions[0]||'')})</option>`).join('');
+  $('problem-sel').innerHTML = INFO.problems.map(p => `<option>${esc(p.id)}</option>`).join('');
+  $('preset').innerHTML = PRESETS.map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join('');
+  renderProblem();
+  applyPreset(0);
+}
+
+function renderProblem(){
+  const p = INFO.problems.find(x => x.id === $('problem-sel').value) || INFO.problems[0];
+  if(!p){ $('problem').textContent = 'Chưa có bài nào.'; return; }
+  const md = esc(p.statement).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+  $('problem').innerHTML = `<p><b>Mã bài:</b> <code>${esc(p.id)}</code> · <b>Tổng điểm:</b> ${p.total_points} · <b>Số test:</b> ${p.cases.length}</p>
+    <div>${md}</div>
+    <h3>Các test case (input → output đúng)</h3>
+    <table><thead><tr><th>#</th><th>File in / out</th><th>Điểm</th><th>Input</th><th>Output mong đợi</th></tr></thead><tbody>` +
+    p.cases.map(c => `<tr><td>${c.position}</td><td><code>${esc(c.in_file)}</code><br><code>${esc(c.out_file)}</code></td><td>${c.points}</td><td>${pre(c.input)}</td><td>${pre(c.output)}</td></tr>`).join('') +
+    `</tbody></table>
+    <h3><code>init.yml</code> (cấu hình bài)</h3>${pre(p.init_yml)}
+    <h3>File trong thư mục bài</h3>${p.files.map(f => `<span class="tag">${esc(f)}</span>`).join('')}`;
+}
+
+function applyPreset(i){
+  const p = PRESETS[i];
+  $('source').value = p.src;
+  if([...$('lang').options].some(o => o.value === p.lang)) $('lang').value = p.lang;
+  $('ml').value = p.ml || 65536;
+}
+
+/* ---- result rendering ---- */
+function renderResult(r, p){
+  if(r.error){ return `<p class="err"><b>Lỗi:</b> ${esc(r.error)}</p>${r.traceback ? pre(r.traceback) : ''}`; }
+  const prob = INFO.problems.find(x => x.id === r.problem);
+  const ok = r.verdict === 'AC';
+  let h = `<div class="row" style="align-items:center"><span class="big ${r.verdict}">${esc(r.verdict)}</span>
+    <div><b>${esc(VERDICT_TEXT[r.verdict] || r.verdict)}</b><br><span class="mut">${r.points} / ${r.total_points} điểm · chấm trong ${r.grading_seconds}s (gồm biên dịch)</span></div></div>
+    <div class="grid">${kv('Submission #', r.submission_id)}${kv('Bài', r.problem)}${kv('Ngôn ngữ', r.language)}${kv('Time limit', r.time_limit + ' s')}${kv('Memory limit', r.memory_limit_kb + ' KB')}</div>`;
+  if(r.compile_error) h += `<h3 class="err">Lỗi biên dịch</h3>${pre(r.compile_error)}`;
+  if(r.compile_message) h += `<h3>Thông báo của trình biên dịch</h3>${pre(r.compile_message)}`;
+  if(r.internal_error) h += `<h3 class="err">Internal error</h3>${pre(r.internal_error)}`;
+  if(r.cases.length){
+    h += `<h3>Chi tiết từng test</h3><table><thead><tr><th>#</th><th>Kết quả</th><th>CPU time</th><th>Wall time</th><th>Bộ nhớ</th><th>Điểm</th><th>Ghi chú</th></tr></thead><tbody>` +
+      r.cases.map(c => `<tr><td>${c.position}${c.batch ? ' (batch '+c.batch+')' : ''}</td><td>${c.codes.map(badge).join(' ')}</td>
+        <td>${c.time.toFixed(3)} s</td><td>${c.wall_time.toFixed(3)} s</td><td>${c.memory_kb} KB</td>
+        <td>${c.points} / ${c.total_points}</td><td>${esc(c.feedback || c.extended_feedback)}</td></tr>`).join('') + '</tbody></table>';
+    h += '<h3>Input / Output từng test</h3>';
+    for(const c of r.cases){
+      const pc = prob && prob.cases.find(x => x.position === c.position);
+      h += `<details ${c.codes[0] !== 'AC' ? 'open' : ''}><summary>Test ${c.position} – ${badge(c.codes[0])} · ${c.time.toFixed(3)}s · ${c.memory_kb} KB</summary>
+        <div class="two"><div><b>Input</b>${pre(pc ? pc.input : '?')}</div><div><b>Output mong đợi</b>${pre(pc ? pc.output : '?')}</div></div>
+        <b>Output của chương trình bạn</b>${pre(c.output)}
+        <div class="mut">Context switch: ${c.context_switches[0]} (cưỡng bức ${c.context_switches[1]}) · runtime: ${esc(c.runtime_version)}${c.feedback ? ' · feedback: ' + esc(c.feedback) : ''}${c.extended_feedback ? ' · checker: ' + esc(c.extended_feedback) : ''}</div></details>`;
+    }
+  }
+  h += `<details><summary>Source code đã nộp</summary>${pre(r.source)}</details>
+        <details><summary>Log thô của judge</summary>${pre(r.log)}</details>
+        <details><summary>JSON thô: request gửi lên &amp; response nhận về</summary>
+          <b>Request</b> <code>POST /api/submit</code>${pre(JSON.stringify(lastReq, null, 2))}
+          <b>Response</b>${pre(JSON.stringify({...r, _req: undefined}, null, 2))}</details>`;
+  return h;
+}
+
+function renderHist(){
+  $('s-hist').hidden = !history.length;
+  $('hist').innerHTML = history.slice().reverse().map((r, i) =>
+    `<tr data-i="${history.length - 1 - i}"><td>${r.submission_id ?? '-'}</td><td>${esc(r.problem)}</td><td>${esc(r.language)}</td><td>${badge(r.verdict || 'IE')}</td><td>${r.points ?? 0}/${r.total_points ?? 0}</td></tr>`).join('');
+}
+$('hist').addEventListener('click', e => {
+  const tr = e.target.closest('tr'); if(!tr) return;
+  const r = history[+tr.dataset.i]; lastReq = r._req; $('result').innerHTML = renderResult(r); $('s-result').hidden = false;
+  $('s-result').scrollIntoView({behavior:'smooth'});
+});
+
+$('go').onclick = async () => {
+  $('go').disabled = true; $('status').textContent = 'Đang biên dịch & chấm… (Java/Kotlin có thể mất vài giây)';
+  try{
+    lastReq = {problem: $('problem-sel').value, language: $('lang').value, source: $('source').value,
+      time_limit: +$('tl').value, memory_limit: +$('ml').value};
+    const res = await fetch('/api/submit', {method:'POST', body: JSON.stringify(lastReq)});
+    const r = await res.json();
+    $('result').innerHTML = renderResult(r); $('s-result').hidden = false;
+    if(!r.error){ r._req = lastReq; history.push(r); renderHist(); }
+    $('s-result').scrollIntoView({behavior:'smooth'});
+    $('status').textContent = '';
+  }catch(e){ $('status').textContent = 'Lỗi: ' + e; }
+  $('go').disabled = false;
+};
+$('preset').onchange = () => applyPreset(+$('preset').value);
+$('problem-sel').onchange = renderProblem;
+
+fetch('/api/info').then(r => r.json()).then(d => { INFO = d; renderInfo(); })
+  .catch(e => { $('judge-info').textContent = 'Không tải được thông tin judge: ' + e; });
+</script>
+</body>
+</html>
