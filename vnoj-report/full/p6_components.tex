@@ -1,0 +1,142 @@
+\section{Từng thành phần: vì sao cần, thiếu thì sao, thay hoặc bỏ được không}\label{sec:components}
+Phần này trả lời năm câu hỏi cho từng khối, dựa trên những gì đã đọc ở các mục trước. ``Thay / bỏ?'' phân biệt rõ: \textbf{bỏ được} (không mất chức năng cốt lõi), \textbf{thay được} (có phương án tương đương, có thể phải sửa cấu hình hoặc code), \textbf{không thay được} (không có phương án trong source hiện tại).
+
+\subsection*{A. Mặt phẳng web}
+\comp{A1. Reverse proxy (nginx hoặc tương đương)}
+{Nhận HTTP(S), phục vụ file tĩnh và media, chuyển request động sang uWSGI, chuyển WebSocket/long-poll tới \c{wsevent}, và phục vụ file lớn mà Django uỷ quyền bằng \c{X-Accel-Redirect}.}
+{Không để app Python phục vụ file tĩnh và giữ nhiều kết nối WebSocket dài. Có một điểm vào chung cho web và realtime. Với judge dùng TLS, cần một proxy giải mã TLS trước \c{bridged} (cổng 9999) vì \c{bridged} không biết TLS.}
+{Vẫn chạy (Django có \c{runserver}) nhưng mất phục vụ tĩnh hiệu quả; các tính năng dùng \c{X-Accel-Redirect} (tải dữ liệu người dùng, replay kỳ thi, PDF đề) không hoạt động đúng; browser không có đường tới \c{wsevent} cùng origin.}
+{\textbf{Thay được}: Caddy, Traefik, Apache, load balancer cloud; hoặc đặt sau CDN. Đổi \c{uwsgi_pass} thành \c{proxy_pass} nếu thay uWSGI. Source \c{OJ} \emph{không bắt buộc} nginx; nó chỉ có các cấu hình \c{*_INTERNAL} cho \c{X-Accel-Redirect}.}
+{\f{judge/utils/views.py} (đặt header \c{X-Accel-Redirect}), \f{dmoj/settings.py:266,277,287}. Cấu hình nginx cụ thể không có trong \c{OJ} (chỉ có ở \c{vnoj-docker}, bản cũ nên không dùng).}
+
+\comp{A2. Django site (uWSGI)}
+{Toàn bộ nghiệp vụ: tài khoản, bài, kỳ thi (7 format), nộp bài, bảng xếp hạng, rating/PP, ticket, blog, tổ chức, admin, API, OAuth. Là bên \emph{khởi tạo} việc chấm bài.}
+{Là sản phẩm VNOJ. Không có nó thì không có người dùng, không có bài nộp, không có dữ liệu để chấm.}
+{Không còn hệ thống.}
+{\textbf{Không bỏ được.} Lớp phục vụ WSGI thay được (uWSGI $\leftrightarrow$ gunicorn; có sẵn \f{dmoj/wsgi_async.py} dùng gevent nhưng gevent không nằm trong \c{requirements.txt}).}
+{\f{judge/}, \f{dmoj/settings.py}, \f{dmoj/wsgi.py}.}
+
+\subsection*{B. Mặt phẳng dữ liệu}
+\comp{B1. MySQL / MariaDB}
+{Nguồn dữ liệu duy nhất: user, bài, bài nộp, từng test, kỳ thi, bảng \c{Judge}. \textbf{Cả Django, Celery và \c{bridged} đều ghi vào đây.}}
+{Cần lưu bền, truy vấn quan hệ, giao dịch. Là kênh trạng thái chung giữa các tiến trình: \c{bridged} cập nhật \c{Submission.status}, Django đọc để hiển thị.}
+{Không chạy được.}
+{\textbf{Không bỏ được.} Thay thực tế: MariaDB. SQLite chỉ dùng cho phát triển (mặc định của \c{settings.py}), và code có phần dành riêng MySQL (\c{LOCK TABLES}, \c{MATCH AGAINST}, \c{STRAIGHT_JOIN}). PostgreSQL chưa thấy được hỗ trợ trong CI.}
+{\f{dmoj/settings.py:718}, \f{judge/dblock.py}, \f{judge/fulltext.py}, \f{.github/workflows/build.yml} (MySQL 8.0).}
+
+\comp{B2. Redis (cache, session, broker)}
+{Ba vai trò độc lập: (a) \emph{cache} Django (fragment HTML, bộ đếm, danh sách bài đã giải), (b) \emph{session} \c{cached_db}, (c) \emph{broker} (và result backend) của Celery.}
+{Giảm tải truy vấn nặng của các trang danh sách/xếp hạng; chia sẻ cache giữa nhiều tiến trình uWSGI để việc xoá cache theo tín hiệu có hiệu lực; Celery cần một hàng đợi trung gian.}
+{Không đặt \c{CACHES} thì Django dùng \c{LocMemCache}: chạy được một tiến trình nhưng cache của các tiến trình uWSGI không đồng bộ và không được xoá đồng loạt (bài vừa sửa có thể hiện bản cũ). Không có broker thì \c{.delay()} có thể lỗi hoặc chậm (mục \ref{sec:celery}). \textbf{Đường chấm bài cũng chạm vào hai thứ này}: \c{on_grading_end} gọi \c{cache.delete_many} (\f{judge/caching.py}) cho mọi bài chấm xong, và \c{JudgeList.judge} gọi \c{on_long_queue.delay} khi hàng đợi dài. Nếu cache là Redis và Redis chết, lệnh xoá cache ném lỗi ở dòng 447, \emph{sau} khi mọi cập nhật DB đã xong (điểm bài, điểm người dùng, thống kê, kỳ thi, credit): chỉ các sự kiện cuối hàm bị bỏ và cache cũ không được xoá nên trang có thể hiển thị dữ liệu cũ. \tI}
+{\textbf{Thay được từng vai trò}: code chỉ gọi API cache chuẩn của Django nên đổi sang Memcached hay cache dựa trên DB được; Celery chấp nhận RabbitMQ hoặc broker khác (có sẵn \c{pika}). Thay đổi cần chỉnh \c{local_settings.py}, không sửa code.}
+{\f{dmoj/settings.py:775,759}, \f{dmoj/celery.py}, \f{judge/signals.py}; \c{requirements.txt} có \c{django-redis}, \c{pika}.}
+
+\comp{B3. Kho test data (filesystem hoặc S3)}
+{Chứa mỗi bài một thư mục \c{<mã>/} với \c{init.yml}, zip test, checker/grader tuỳ chỉnh. Site \emph{ghi} (qua \c{StorageManager}); judge \emph{đọc} (qua \c{problem_storage_globs}).}
+{Là hợp đồng dữ liệu giữa site và judge: judge không nhận test qua socket, mà đọc từ thư mục. Cũng cho phép nhiều kho (nhiều \c{id}) và gán judge theo kho.}
+{Không có thì không tải được bài; judge báo lỗi khi không tìm thấy \c{init.yml} (\c{assert root_dir is not None} trong \c{Problem.__init__}) dẫn tới \c{IE}.}
+{\textbf{Thay được} backend: filesystem cục bộ, hoặc S3 cho site (judge phải mount thành thư mục). \textbf{Không có} cơ chế đồng bộ trong source: phải tự lo (NFS, rsync, bind-mount). Nhánh \c{microvm-api-judge} chưa merge có kho S3 phía judge.}
+{\f{judge/utils/problem_data_storage.py}, \f{judge/utils/storages/}, \f{dmoj/judgeenv.py}, \f{dmoj/problem.py}.}
+
+\subsection*{C. Bất đồng bộ và thời gian thực}
+\comp{C1. Celery worker}
+{Chạy tác vụ nền: rejudge hàng loạt, rescore, MOSS, xuất dữ liệu, webhook Discord, khôi phục bài từ kho lạnh.}
+{Các việc này lâu hoặc không nên chặn request web. Có trang tiến độ dùng \c{AsyncResult}.}
+{Các tác vụ trên không chạy; việc xếp hàng vẫn thành công nếu broker sống. \textbf{Nộp và chấm bài thường vẫn bình thường.} Admin không rejudge hàng loạt được.}
+{\textbf{Bỏ được} ở môi trường nhỏ nếu chấp nhận mất các tính năng trên. Thay thế: chạy tác vụ đồng bộ (\c{CELERY_TASK_ALWAYS_EAGER}) cho thử nghiệm.}
+{\f{judge/tasks/}, \f{dmoj/celery.py}, \f{judge/views/problem_manage.py:95}.}
+
+\comp{C2. Celery beat}
+{Bộ lập lịch: sinh các tác vụ định kỳ theo \c{beat_schedule}.}
+{Worker không tự chạy lịch.}
+{Mất 4 việc định kỳ: thống kê hàng đợi, thu gom bài đã xoá, làm mới bài ``hot'', đặt lại credit tổ chức hàng tháng. \textbf{Bài xoá mềm sẽ không bao giờ bị xoá thật.}}
+{\textbf{Bỏ được} nếu chấp nhận hậu quả. Thay thế: cron gọi \c{manage.py} hoặc gọi tác vụ trực tiếp.}
+{\f{dmoj/celery.py:25--54}.}
+
+\comp{C3. \c{wsevent} (Node.js) và \c{event_poster}}
+{Hub tin nhắn trong RAM để đẩy cập nhật trạng thái bài nộp, xếp hạng kỳ thi, ticket, thông báo tới trình duyệt qua WebSocket hoặc long-poll.}
+{Trải nghiệm trực tiếp: thấy test case chạy từng cái, bảng xếp hạng nhảy khi có AC, không phải F5.}
+{Chức năng cốt lõi không đổi. Trang hiển thị trạng thái tại lúc tải; người dùng phải tải lại. Phía đăng nuốt lỗi mạng nên không làm hỏng việc chấm.}
+{\textbf{Bỏ được} (\c{EVENT_DAEMON_USE = False}, đã là mặc định). \textbf{Thay được}: AMQP (\c{EVENT_DAEMON_AMQP}, qua RabbitMQ), nhưng phía trình duyệt vẫn cần một daemon nói WebSocket/long-poll theo giao thức của \c{event.js}.}
+{\f{judge/event_poster*.py}, \f{websocket/daemon.js}, \f{resources/event.js}.}
+
+\comp{C4. Dịch vụ ngoài}
+{pdfoid (PDF), mathoid/texoid (toán), camo (ảnh), dịch vụ lưu trữ bài, Discord, MOSS, Mailgun, reCAPTCHA, HIBP, đăng nhập xã hội.}
+{Mỗi cái phục vụ một tính năng phụ trợ.}
+{Chỉ mất tính năng tương ứng (không có PDF, không có thông báo Discord, \ldots). Mặc định trong \c{settings.py} đều là ``tắt''.}
+{\textbf{Bỏ được hết}; \c{pwned} và \c{recaptcha} nên giữ cho môi trường công khai.}
+{\f{dmoj/settings.py}, \f{judge/utils/}, mục \ref{sec:external}.}
+
+\subsection*{D. Mặt phẳng chấm bài}
+\comp{D1. \c{bridged}}
+{Daemon duy nhất: nhận yêu cầu chấm từ Django, \emph{xếp hàng theo ưu tiên}, chọn judge (tier, ngôn ngữ, kho, tải), giao việc, nhận kết quả, \textbf{tính điểm và ghi DB}, đăng sự kiện, theo dõi sức khoẻ judge bằng ping.}
+{Tách việc chấm khỏi web: Django không giữ kết nối tới từng judge, không chờ kết quả. Judge không cần biết DB hay Django. Mọi quy tắc phân phối (ưu tiên thi, giữ chỗ, dự phòng nóng) nằm một chỗ.}
+{Bài nộp được tạo nhưng \textbf{không có gì chấm}: Django gửi yêu cầu thất bại và đặt \c{IE}. Judge không có chỗ để nối.}
+{\textbf{Không thay được} trong source hiện tại. Cũng là \textbf{điểm đơn lẻ}: một tiến trình, hàng đợi trong RAM, khởi động lại mất toàn bộ hàng đợi và các bài đang chấm thành \c{IE}. Phương án chịu lỗi duy nhất có sẵn là \textbf{tier} của judge (dự phòng \emph{judge}, không phải dự phòng \c{bridged}) và (phần nào) balancer.}
+{\f{judge/bridge/}, mục \ref{sec:bridged}.}
+
+\comp{D2. Judge server (tiến trình \c{dmoj})}
+{Nối tới \c{bridged}, nhận bài, tải \c{init.yml}, biên dịch, chạy từng test trong sandbox, chạy checker, báo kết quả.}
+{Chạy mã lạ cần một tiến trình riêng, có quyền hạn khác, đặt được ở máy riêng. Một judge chấm một bài một lúc; số judge quyết định thông lượng.}
+{Không có judge: hàng đợi tích tụ; bài không bao giờ được chấm. Không có judge cho một \emph{ngôn ngữ} hay \emph{kho}: bài đó bị xếp hàng mãi (không có thông báo lỗi riêng), trong khi \c{Problem.usable_languages} sẽ ẩn ngôn ngữ đó khỏi form nộp.}
+{\textbf{Không bỏ được.} Thay thế: một triển khai khác nói cùng giao thức (phiên bản 2) cũng dùng được; nhánh \c{microvm-api-judge} chưa merge là hướng làm judge chạy qua HTTP API.}
+{\f{dmoj/judge.py}, \f{dmoj/packet.py}, mục \ref{sec:judge}.}
+
+\comp{D3. Sandbox \c{cptbox}}
+{Cô lập chương trình thí sinh: seccomp + ptrace + rlimit + chính sách file; đo thời gian, bộ nhớ, đầu ra.}
+{Không thể chạy mã của người lạ mà không có nó: có thể đọc file, mở mạng, chiếm CPU/RAM, fork-bomb. Cũng là nguồn các phép đo TLE/MLE/OLE.}
+{Thí sinh có toàn quyền như người dùng chạy judge; không có phép đo.}
+{\textbf{Không bỏ được.} Thay thế: sandbox khác như \c{isolate} hoặc Landlock + seccomp-notify (các nhánh \c{hiep/landlock}, \c{hiep/ptraceless} chưa merge). Đổi sandbox là thay \c{dmoj/cptbox/}, không đụng giao thức.}
+{\f{dmoj/cptbox/}, mục \ref{sec:cptbox}.}
+
+\comp{D4. Executor và runtime (image Docker)}
+{Biết cách biên dịch và chạy từng ngôn ngữ; image Docker cung cấp compiler/interpreter.}
+{Mỗi ngôn ngữ cần cờ, quyền file và syscall riêng.}
+{Judge không có executor nào cho ngôn ngữ đó $\to$ không khai báo trong \c{handshake} $\to$ site không giao bài ngôn ngữ đó cho nó.}
+{\textbf{Bỏ được từng ngôn ngữ} (\c{--only-executors}/\c{--exclude-executors}). \textbf{Thay được} bộ runtime bằng image khác; các ``tier'' chỉ là bộ ngôn ngữ khác nhau.}
+{\f{dmoj/executors/}, \f{.docker/}, mục \ref{sec:docker}.}
+
+\comp{D5. Grader và checker}
+{Grader quyết định \emph{cách} chấm (chuẩn, tương tác, hàm, chỉ output); checker quyết định \emph{so sánh} đầu ra thế nào.}
+{Nhiều đề không so khớp từng từ: đáp án nhiều cách (checker tuỳ chỉnh), số thực (\c{floats}), tương tác.}
+{Chỉ còn \c{StandardGrader} + \c{standard} checker: đủ cho bài ``in ra đáp án duy nhất''.}
+{\textbf{Bỏ được} các bản chuyên biệt nếu chỉ có bài đơn giản; không bỏ được grader chuẩn và \c{standard}. Site chỉ cho chọn 4 grader và 7 checker.}
+{\f{dmoj/graders/}, \f{dmoj/checkers/}, \f{dmoj/contrib/}.}
+
+\comp{D6. Balancer}
+{Cho nhiều \c{bridged} (nhiều site) dùng chung một dàn judge; thêm \c{storage-namespace}.}
+{Một dàn máy chấm đắt; nhiều site muốn tận dụng chung.}
+{Mỗi site tự có judge của mình; không ảnh hưởng chức năng.}
+{\textbf{Bỏ được} và nên bỏ nếu chỉ một site. Không thay thế sẵn có. Lưu ý các giới hạn: FIFO, không ưu tiên, một bài một lúc cho mỗi mục \c{bridges} (mục \ref{sec:balancer}).}
+{\f{judge/balancer/}.}
+
+\comp{D7. \c{dmoj-cli}, \c{testsuite}, \c{dmoj-autoconf}}
+{Công cụ phát triển/vận hành: chấm cục bộ không cần site, kiểm thử judge, dò đường dẫn compiler.}
+{Thử một bài hay một executor nhanh; kiểm tra bản build.}
+{Không ảnh hưởng chức năng chạy thật, nhưng \c{dmoj-autoconf} được dùng \textbf{khi build image} để sinh \f{/judge-runtime-paths.yml}, nên judge trong Docker cần nó.}
+{\c{dmoj-cli}/\c{testsuite} \textbf{bỏ được}; \c{dmoj-autoconf} cần khi build.}
+{\f{dmoj/cli.py}, \f{dmoj/testsuite.py}, \f{dmoj/executors/autoconfig.py}.}
+
+\subsection{Bảng quyết định tổng hợp}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}L{2.4cm}L{4.6cm}Y@{}}
+\toprule
+Thành phần & Mức cần & Thay bằng & Có thể bỏ khi \\
+\midrule
+Django + uWSGI & bắt buộc & gunicorn & --- \\
+MySQL/MariaDB & bắt buộc & MariaDB & --- (SQLite chỉ để dev) \\
+\c{bridged} & bắt buộc để chấm & (không) & --- \\
+Judge $\ge 1$ & bắt buộc để chấm & (giao thức v2) & --- \\
+\c{cptbox} & bắt buộc & sandbox khác (chưa merge) & --- \\
+Kho test data & bắt buộc & FS $\leftrightarrow$ S3 (site) & --- \\
+Reverse proxy & rất nên có & Caddy, Traefik, CDN & chạy thử nghiệm \\
+Cache chung & rất nên có & Memcached, DB cache & một tiến trình duy nhất \\
+Celery broker & cần cho vài thao tác web & RabbitMQ & không dùng các thao tác đó \\
+Celery worker & tuỳ chọn & chạy đồng bộ & không rejudge hàng loạt, không MOSS \\
+Celery beat & tuỳ chọn & cron & chấp nhận không dọn bài xoá \\
+\c{wsevent} & tuỳ chọn & AMQP (nhưng cần daemon cho trình duyệt) & không cần cập nhật trực tiếp \\
+Balancer & tuỳ chọn & (không) & chỉ một site \\
+Dịch vụ ngoài & tuỳ chọn & --- & không cần tính năng tương ứng \\
+\bottomrule
+\end{tabularx}
+\end{center}

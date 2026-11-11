@@ -1,0 +1,91 @@
+% !TEX program = xelatex
+\documentclass[10.5pt,a4paper]{article}
+\usepackage[margin=2.1cm]{geometry}
+\usepackage{amsmath}
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{Latin Modern Mono}[Scale=0.92]
+\usepackage[table]{xcolor}
+\usepackage{tabularx,booktabs,enumitem,array,longtable,multirow}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc,shapes.misc,shapes.geometric,decorations.pathreplacing}
+\usepackage[hidelinks,bookmarksnumbered]{hyperref}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{fancyhdr}
+\usepackage{etoolbox}
+\usepackage{xspace}
+
+\definecolor{web}{HTML}{DCE8FB}
+\definecolor{dat}{HTML}{E3F4E1}
+\definecolor{asy}{HTML}{FFF1CC}
+\definecolor{jud}{HTML}{FADBD8}
+\definecolor{ext}{HTML}{ECECEC}
+\definecolor{cS}{HTML}{1B7F3B}
+\definecolor{cI}{HTML}{B26A00}
+\definecolor{cQ}{HTML}{B3261E}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4.5pt}
+\setlength{\emergencystretch}{3em}
+\renewcommand{\arraystretch}{1.18}
+\setlist{nosep,leftmargin=1.3em,topsep=2pt}
+\urlstyle{tt}
+\Urlmuskip=0mu plus 3mu
+\sloppy
+
+% mã ngắn (có thể chứa dấu cách) và đường dẫn file (tự ngắt dòng)
+\renewcommand{\c}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\f}[1]{{\small\path{#1}}}
+% mức độ chắc chắn
+\newcommand{\tS}{\textcolor{cS}{\textbf{[S]}}\xspace}
+\newcommand{\tI}{\textcolor{cI}{\textbf{[I]}}\xspace}
+\newcommand{\tQ}{\textcolor{cQ}{\textbf{[?]}}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+% \comp{tên}{làm gì}{vì sao cần}{nếu không có}{thay thế / bỏ?}{căn cứ}
+\newcommand{\comp}[6]{%
+\begin{tcolorbox}[enhanced,breakable,colback=white,colframe=black!55,boxrule=0.5pt,arc=2pt,
+  title={\textbf{#1}},fonttitle=\normalsize,left=4pt,right=4pt,top=2pt,bottom=2pt,before skip=7pt,after skip=7pt]
+\begin{tabularx}{\linewidth}{@{}>{\bfseries\raggedright}p{2.5cm}Y@{}}
+Làm gì & #2 \\[2pt]
+Vì sao cần & #3 \\[2pt]
+Nếu không có & #4 \\[2pt]
+Thay / bỏ? & #5 \\[2pt]
+Căn cứ & \small #6 \\
+\end{tabularx}
+\end{tcolorbox}}
+
+% \finding{mức}{tiêu đề}{nội dung}
+\newcommand{\finding}[3]{%
+\begin{tcolorbox}[enhanced,breakable,colback=#1!6,colframe=#1!70!black,boxrule=0.5pt,arc=2pt,
+  left=4pt,right=4pt,top=2pt,bottom=2pt,before skip=5pt,after skip=5pt,
+  title={\textbf{#2}},fonttitle=\small,coltitle=black,colbacktitle=#1!18]
+\small #3
+\end{tcolorbox}}
+
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small Kiến trúc VNOJ — bản đầy đủ}\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\title{\textbf{Kiến trúc VNOJ}\\[3pt]\large Phân tích từ source của \c{VNOI-Admin/OJ} (site) và \c{VNOI-Admin/judge-server}\\[2pt]\normalsize Bản đầy đủ}
+\author{}
+\date{11/11/2026}
+
+\begin{document}
+\maketitle
+\vspace{-1.2cm}
+\tableofcontents
+
+\input{p1_scope}
+\input{p2_overview}
+\input{p3_site}
+\input{p3b_site}
+\input{p4_judge}
+\input{p5_lifecycle}
+\input{p6_components}
+\input{p7_risks}
+\input{p8_appendix}
+\end{document}

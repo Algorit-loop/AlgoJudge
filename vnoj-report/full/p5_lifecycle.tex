@@ -1,0 +1,62 @@
+\section{Vòng đời một bài nộp từ đầu đến cuối}\label{sec:lifecycle}
+Hình 8 ghép mọi thành phần ở trên thành một chuỗi thao tác. Chữ trong hình rút gọn; bảng ngay sau đó cho tên hàm và file.
+
+\begin{center}\begin{minipage}{\textwidth}\centering
+\begin{tikzpicture}[
+  hd/.style={draw,rounded corners=2pt,minimum width=2.1cm,minimum height=0.75cm,align=center,font=\footnotesize,line width=0.5pt},
+  ll/.style={black!45,dashed,line width=0.4pt},
+  m/.style={-{Stealth[length=1.8mm]},line width=0.5pt},
+  lb/.style={font=\scriptsize,inner sep=1pt,above=-1pt,midway},
+  nt/.style={draw,fill=yellow!20,font=\scriptsize,align=center,inner sep=2pt}
+]
+\def\dy{0.66}
+\node[hd,fill=ext]  (b) at (0,0) {Trình duyệt};
+\node[hd,fill=web]  (d) at (2.95,0) {Django};
+\node[hd,fill=jud]  (g) at (5.9,0) {\c{bridged}};
+\node[hd,fill=jud]  (j) at (8.85,0) {Judge};
+\node[hd,fill=dat]  (q) at (11.8,0) {MySQL};
+\node[hd,fill=asy]  (w) at (14.75,0) {wsevent};
+\foreach \n in {b,d,g,j,q,w} {\draw[ll] (\n.south) -- ++(0,-9.4);}
+\def\ya{-1.2}
+\draw[m] (0,\ya) -- node[lb]{1 nộp bài} (2.95,\ya);
+\draw[m] (2.95,\ya-1*\dy) -- node[lb]{2 lưu bài nộp, trạng thái QU} (11.8,\ya-1*\dy);
+\draw[m] (2.95,\ya-2*\dy) -- node[lb]{3 yêu cầu chấm :9998} (5.9,\ya-2*\dy);
+\node[nt] at (5.9,\ya-3.1*\dy) {4 chọn judge};
+\draw[m] (5.9,\ya-4.1*\dy) -- node[lb]{5 giao bài} (8.85,\ya-4.1*\dy);
+\draw[m] (8.85,\ya-5.1*\dy) -- node[lb]{6 ack} (5.9,\ya-5.1*\dy);
+\draw[m] (5.9,\ya-6.1*\dy) -- node[lb]{7 trạng thái P} (11.8,\ya-6.1*\dy);
+\draw[m] (5.9,\ya-6.1*\dy-0.28) -- node[lb]{sự kiện} (14.75,\ya-6.1*\dy-0.28);
+\node[nt] at (8.85,\ya-7.6*\dy) {8 biên dịch, chạy từng test trong sandbox};
+\draw[m] (8.85,\ya-8.7*\dy) -- node[lb]{9 grading-begin} (5.9,\ya-8.7*\dy);
+\draw[m] (8.85,\ya-9.7*\dy) -- node[lb]{10 test-case-status $\times n$} (5.9,\ya-9.7*\dy);
+\draw[m] (5.9,\ya-9.7*\dy-0.28) -- node[lb]{ghi test case} (11.8,\ya-9.7*\dy-0.28);
+\draw[m] (8.85,\ya-11.0*\dy) -- node[lb]{11 grading-end} (5.9,\ya-11.0*\dy);
+\draw[m] (5.9,\ya-12.0*\dy) -- node[lb]{12 tính điểm, trạng thái D} (11.8,\ya-12.0*\dy);
+\draw[m] (5.9,\ya-12.0*\dy-0.28) -- node[lb]{sự kiện} (14.75,\ya-12.0*\dy-0.28);
+\draw[m] (14.75,\ya-13.2*\dy) -- node[lb]{13 đẩy sự kiện} (0,\ya-13.2*\dy);
+\end{tikzpicture}
+\par\vspace{3pt}\small\raggedright\textbf{Hình 8.} Sơ đồ tuần tự. Các bước 7, 10, 12 \c{bridged} vừa ghi MySQL vừa đăng sự kiện (nếu bật). Bước 13 chỉ xảy ra khi \c{wsevent} bật; nếu không, người dùng thấy kết quả khi tải lại trang. \end{minipage}\end{center}
+
+\begin{center}\small
+\begin{longtable}{@{}L{0.7cm}L{4.4cm}L{7.6cm}@{}}
+\toprule
+\# & Việc & Hàm và file \\
+\midrule
+\endhead
+1 & Kiểm tra quyền, tạo bài nộp & \c{handle_submission_post}, \f{judge/views/problem.py:347} \\
+2 & Ghi \c{Submission}, \c{ContestSubmission}, \c{SubmissionSource} trong một giao dịch & cùng hàm; sau giao dịch gọi \c{Submission.judge()} \\
+3 & Đặt \c{QU}, xoá test cũ, gửi yêu cầu & \c{judge_submission}, \f{judge/judgeapi.py:56} $\to$ \c{judge_request} \\
+4 & Chọn judge hoặc xếp hàng & \c{DjangoHandler.on_submission} $\to$ \c{JudgeList.judge}, \f{judge/bridge/judge_list.py:196} \\
+5 & Gửi cho judge kèm giới hạn đã tra DB & \c{JudgeHandler.submit} + \c{get_related_submission_data}, \f{judge_handler.py:192, 239} \\
+6 & Judge ack rồi bắt đầu chấm & \c{PacketManager._receive_packet}, \f{dmoj/packet.py:264}; \c{Judge.begin_grading}, \f{dmoj/judge.py:131} \\
+7 & Đặt \c{P}, ghi \c{judged_on} & \c{on_submission_acknowledged} $\to$ \c{on_submission_processing} \\
+8 & Dựng \c{Problem}, biên dịch, chạy test trong sandbox & \c{JudgeWorker._grade_cases}, \f{dmoj/judge.py:463}; \c{StandardGrader.grade}, \f{graders/standard.py} \\
+9 & Đặt \c{G} & \c{on_grading_begin}, \f{judge_handler.py:357} \\
+10 & Lưu từng test, cập nhật \c{current_testcase} & \c{on_test_case}, \f{judge_handler.py:526} \\
+11 & Giải phóng judge, nhận bài tiếp trong hàng đợi & \c{_free_self} $\to$ \c{JudgeList.on_judge_free} $\to$ \c{_handle_free_judge} \\
+12 & Tính điểm, cập nhật điểm người dùng, bài, kỳ thi, credit & \c{on_grading_end}, \f{judge_handler.py:372} \\
+13 & Đăng sự kiện, trình duyệt cập nhật & \c{event.post}, \f{judge/event_poster_ws.py}; \f{resources/event.js} \\
+\bottomrule
+\end{longtable}
+\end{center}
+Điểm đáng chú ý: ở bước 11, \c{_free_self} được gọi \textbf{ngay khi nhận \c{grading-end}, trước khi tính điểm} (dòng 374). Nghĩa là judge được giao bài kế tiếp trong lúc \c{bridged} còn đang tổng hợp điểm của bài trước ở cùng luồng \c{JudgeHandler}; việc tổng hợp vẫn tuần tự theo từng judge vì một luồng xử lý gói của judge đó. \tS

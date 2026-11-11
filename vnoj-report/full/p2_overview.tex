@@ -1,0 +1,89 @@
+\section{Bức tranh tổng thể}
+VNOJ chia được thành bốn mặt phẳng: \emph{web} (phục vụ người dùng), \emph{dữ liệu}, \emph{bất đồng bộ / thời gian thực}, và \emph{chấm bài}. Điều cần nhớ nhất:
+
+\begin{quote}\textbf{Django không tự chấm bài.} Nó ghi bài nộp vào DB rồi nhờ daemon \c{bridged} điều phối. Các máy chấm \emph{tự kết nối ra} \c{bridged}. Kết quả chấm đi ngược lại qua \c{bridged}, và \textbf{chính \c{bridged}} tính điểm rồi ghi vào DB. \tS
+\end{quote}
+
+\begin{center}\begin{minipage}{\textwidth}\centering
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners=2pt,minimum width=2.55cm,minimum height=1.0cm,align=center,font=\footnotesize,line width=0.5pt},
+  web/.style={box,fill=web}, dat/.style={box,fill=dat}, asy/.style={box,fill=asy}, jud/.style={box,fill=jud}, ext/.style={box,fill=ext,dashed},
+  arr/.style={-{Stealth[length=2mm]},line width=0.5pt},
+  dsh/.style={arr,dashed,black!70},
+  lab/.style={font=\scriptsize,fill=white,inner sep=1pt},
+  plane/.style={draw=black!35,rounded corners=4pt,dashed,inner sep=7pt}
+]
+\node[ext] (user) at (0,0) {Trình duyệt};
+\node[web] (proxy) at (0,-2.3) {Reverse proxy\\(nginx)};
+\node[web] (app) at (0,-4.7) {Django site\\uWSGI};
+\node[asy] (celery) at (4,-4.7) {Celery\\worker + beat};
+\node[asy] (ws) at (8,0) {wsevent\\(Node.js)};
+\node[jud] (bridge) at (8,-4.7) {\c{bridged}\\hàng đợi + điều phối};
+\node[jud] (judge) at (12.3,-4.7) {Judge $\times N$\\sandbox + runtimes};
+\node[dat] (db) at (0,-7.9) {MySQL};
+\node[dat] (redis) at (4,-7.9) {Redis\\cache/session/broker};
+\node[dat] (store) at (8,-7.9) {Kho test data\\(FS hoặc S3)};
+
+\begin{scope}[on background layer]
+ \node[plane,fill=dat!25,fit=(db)(redis)(store)] (dplane) {};
+\end{scope}
+\node[font=\scriptsize,anchor=north west] at ($(dplane.south west)+(0.1,-0.02)$) {Mặt phẳng dữ liệu};
+
+\draw[arr] (user) -- node[lab]{HTTP(S)} (proxy);
+\draw[arr] (proxy) -- node[lab]{uwsgi} (app);
+\draw[arr] (proxy.east) -| ($(ws.south)+(-0.7,0)$);
+\node[lab] at (4,-2.3) {WebSocket / long-poll};
+\draw[arr] ($(app.north)+(0.7,0)$) -- ++(0,0.65) -| ($(bridge.north)+(-0.7,0)$);
+\node[lab] at (4,-3.55) {TCP :9998, 1 kết nối cho mỗi yêu cầu chấm};
+\draw[arr] (judge) -- node[lab]{TCP :9999} (bridge);
+\node[font=\scriptsize,align=center] at (10.15,-5.55) {judge chủ động nối ra};
+\draw[arr] ($(bridge.north)+(0.7,0)$) -- ($(ws.south)+(0.7,0)$);
+\node[lab,align=center] at (9.25,-2.3) {đăng\\sự kiện};
+\draw[arr] (app.south) -- node[lab,pos=0.45]{ORM, cache, kho} (app.south |- dplane.north);
+\draw[arr] (celery.south) -- node[lab,pos=0.45]{broker, DB} (celery.south |- dplane.north);
+\draw[arr] (bridge.south) -- node[lab,pos=0.45]{ghi kết quả} (bridge.south |- dplane.north);
+\draw[dsh] (judge.south) |- (store.east);
+\node[lab] at (10.8,-7.9) {đọc test data};
+\end{tikzpicture}
+\par\vspace{3pt}\small\raggedright\textbf{Hình 1.} Kiến trúc tổng thể. Ba mũi tên đi xuống mặt phẳng dữ liệu: Django dùng MySQL, Redis (cache, session) và kho test data; Celery dùng Redis làm broker và ghi MySQL; \c{bridged} ghi kết quả vào MySQL. Nét đứt: judge đọc test data trực tiếp từ thư mục đã khai báo, không tải qua mạng (mục \ref{sec:storage}). Balancer là phần tuỳ chọn nên vẽ riêng ở Hình 5.
+\end{minipage}\end{center}
+
+\subsection{Danh mục tiến trình}
+Mỗi hộp trong Hình 1 là một tiến trình (hoặc nhóm tiến trình) riêng. Bảng sau liệt kê cách khởi chạy theo đúng file trong repo:
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{2.5cm}L{4.4cm}L{2.7cm}Y@{}}
+\toprule
+Tiến trình & Điểm vào trong source & Cổng mặc định & Bắt buộc? \\
+\midrule
+Django (web) & \f{dmoj/wsgi.py} (uWSGI có trong \c{requirements.txt}) & do proxy quyết định & \textbf{Có.} \\
+\c{bridged} & \c{python manage.py runbridged} \f{(judge/management/commands/runbridged.py)}; hoặc \f{dmoj_bridge_async.py} (patch \c{gevent}) & 9998 (Django), 9999 (judge) & \textbf{Có, nếu muốn chấm bài.} \\
+Judge & \c{dmoj <host> [tên] [khoá]} \f{(dmoj/judge.py:main)}; cổng nối mặc định 9999 & (nối ra) & \textbf{Có, ít nhất 1.} \\
+Celery worker & module \f{dmoj_celery.py}, cấu hình ở \f{dmoj/celery.py} & --- & Không để chấm; cần cho rejudge hàng loạt, MOSS, \ldots \\
+Celery beat & lịch \c{beat_schedule} trong \f{dmoj/celery.py} & --- & Chỉ cho các việc định kỳ. \\
+\c{wsevent} & \c{node websocket/daemon.js}; đọc \f{websocket/config.js} (\textbf{không có trong repo}, bị \c{.gitignore}) & \c{EVENT_DAEMON_POST} 9997, \c{EVENT_DAEMON_GET} 9996 (mặc định trong settings) & Không. \\
+Balancer & \c{python manage.py runbalancer -c cfg.yml} & 8888 (cho judge) & Không. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\tS Mọi giá trị trong cột ``Cổng mặc định'' lấy từ \f{dmoj/settings.py}: \c{BRIDGED_JUDGE_ADDRESS}, \c{BRIDGED_DJANGO_ADDRESS}, \c{BALANCER_JUDGE_ADDRESS}, \c{EVENT_DAEMON_POST}, \c{EVENT_DAEMON_GET}. Cổng thật của \c{wsevent} do \f{websocket/config.js} quyết định \tQ.
+
+Hai điểm vào dùng \c{gevent} (\f{dmoj_bridge_async.py}, \f{dmoj/wsgi_async.py}) tồn tại, nhưng \c{gevent} \textbf{không} nằm trong \f{requirements.txt}. Cách chạy mặc định của \c{bridged} là \c{runbridged}, dùng luồng (thread) thường. \tS
+
+\subsection{Ai nói chuyện với ai}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.3cm}L{3.1cm}Y@{}}
+\toprule
+Kết nối & Giao thức & Chi tiết \\
+\midrule
+Django $\rightarrow$ \c{bridged} & TCP, JSON nén zlib, có tiền tố độ dài 4 byte & \textbf{Một kết nối cho mỗi yêu cầu}: kết nối, gửi 1 gói, nhận 1 gói trả lời, đóng (\f{judge/judgeapi.py:judge_request}). \tS \\
+Judge $\rightarrow$ \c{bridged} & Cùng khung gói, kết nối \textbf{dài} & Judge nối ra, bắt tay (\c{handshake}, \c{version} 2), rồi nhận \c{submission-request} và gửi kết quả. \c{bridged} \c{ping} mỗi 10 giây. \tS \\
+\c{bridged}/Django $\rightarrow$ \c{wsevent} & WebSocket (hoặc AMQP) & \c{event.post(kênh, thông điệp)}. Mặc định \textbf{tắt} (\c{EVENT_DAEMON_USE = False}). \tS \\
+Trình duyệt $\leftrightarrow$ \c{wsevent} & WebSocket, dự phòng long-poll & Lọc theo kênh, tối đa 5 kênh mỗi kết nối (\f{websocket/daemon.js}). \tS \\
+Django, Celery $\rightarrow$ MySQL & Django ORM & Cả \c{bridged} cũng ghi trực tiếp bằng ORM. \tS \\
+Django, Celery $\rightarrow$ Redis & Django cache API; Celery broker & Code chỉ dùng API cache chuẩn của Django, không gọi Redis trực tiếp (\c{grep redis} trong \f{judge/} không có kết quả mã). \tS \\
+Judge $\rightarrow$ site (HTTP) & \c{requests.get} & Chỉ cho ngôn ngữ \c{file_only} (\c{OUTPUT}, \c{SCRATCH}): judge tải nguồn bài nộp từ \c{SITE_FULL_URL} (\f{dmoj/utils/helper_files.py:download_source_code}). \tS \\
+Django $\rightarrow$ dịch vụ ngoài & HTTP(S) & pdfoid, mathoid/texoid, camo, dịch vụ lưu trữ bài, Discord webhook, MOSS, mailgun. Xem mục \ref{sec:external}. \tS \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Hai chi tiết thường bị bỏ qua: (1) \textbf{judge không hoàn toàn ``chỉ nối ra''}: với bài nộp dạng file, nó cần đường HTTP tới site; (2) \c{bridged} \textbf{không dùng TLS}: nó là \c{socketserver.TCPServer} thường (\f{judge/bridge/server.py}). Judge có tuỳ chọn \c{--secure} để dùng TLS, nên phía \c{bridged} phải đặt một proxy giải mã TLS ở trước. \c{bridged} hiểu giao thức PROXY (\c{BRIDGED_JUDGE_PROXIES}, \f{judge/bridge/base_handler.py}) để lấy lại IP thật của judge. \tS

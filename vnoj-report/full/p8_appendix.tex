@@ -1,0 +1,58 @@
+\appendix
+\section{Phụ lục}
+
+\subsection{Thuật ngữ và mã trạng thái}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{2.2cm}Y@{}}
+\toprule
+Mã & Ý nghĩa \\
+\midrule
+\c{QU}, \c{P}, \c{G}, \c{D} & Trạng thái bài nộp: Queued (chờ), Processing (judge đã nhận), Grading (đang chấm), Done (đã xong). \\
+\c{CE}, \c{IE}, \c{AB} & Compile Error, Internal Error (lỗi phía máy chấm), Aborted (bị huỷ). Vừa là trạng thái vừa là kết quả. \\
+\c{AC}, \c{PAC}, \c{WA} & Accepted, Partially Accepted, Wrong Answer. \\
+\c{TLE}, \c{MLE}, \c{OLE} & Quá thời gian, quá bộ nhớ, quá giới hạn output. \\
+\c{RTE}, \c{IR} & Runtime Error (bị tín hiệu giết); Invalid Return (mã thoát khác 0). \\
+\c{SC} & Short-Circuited: bị bỏ qua vì một test trước đó đã sai. \\
+Tier & Mức dự phòng của judge; chỉ tier nhỏ nhất đang online được dùng. \\
+Kho (storage) & Nơi chứa dữ liệu bài, có \c{id}; judge khai báo nó có kho nào. \\
+Batch & Nhóm test chung một điểm (min điểm các test trong nhóm); có thể phụ thuộc batch trước. \\
+Pretest & Test chạy trước, điểm 0, dùng làm ``rào'' sơ bộ. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Cách kiểm tra lại các khẳng định}
+Mọi khẳng định có nhãn \tS có thể kiểm tra bằng các lệnh sau (đường dẫn tương đối với thư mục gốc từng repo):
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{5.2cm}Y@{}}
+\toprule
+Khẳng định & Lệnh \\
+\midrule
+Mốc commit & \c{git log -1} \\
+Timer không được start (F1) & \c{grep -n "Timer\|\.start()" judge/bridge/*.py judge/balancer/*.py} \\
+\c{short_circuit} không đọc (F2) & \c{grep -rn short_circuit dmoj --include=*.py} \\
+Không có mã S3 phía judge & \c{grep -rIiw "s3\|boto" dmoj --include=*.py} \\
+Judge từ chối phiên bản 1 & \c{grep -n "version" judge/bridge/judge_handler.py} \\
+Handler của gói judge & \c{sed -n 46,61p judge/bridge/judge_handler.py} \\
+Mạng trong sandbox biên dịch & \c{grep -n "socket\|connect" dmoj/cptbox/compiler_isolate.py} \\
+Daemon \c{wsevent} không có \c{auth} & \c{grep -n "auth" websocket/*.js} (không có kết quả) \\
+Nơi gọi \c{.delay()} & \c{grep -rn "\.delay(" judge --include=*.py} \\
+Nhánh chưa merge & \c{git log master..origin/<nhánh>} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Các file đáng đọc nhất}
+Nếu chỉ có thời gian đọc mười file, đây là thứ tự khuyến nghị:
+\begin{enumerate}
+\item \f{OJ/judge/bridge/judge_list.py} --- lập lịch, ưu tiên, tier (241 dòng).
+\item \f{OJ/judge/bridge/judge_handler.py} --- giao thức judge và tính điểm (668 dòng).
+\item \f{OJ/judge/judgeapi.py} --- phía Django của giao thức (137 dòng).
+\item \f{OJ/judge/bridge/daemon.py} --- khởi tạo và hành vi khi khởi động lại (50 dòng).
+\item \f{judge-server/dmoj/judge.py} --- mô hình tiến trình và \c{_grade_cases} (703 dòng).
+\item \f{judge-server/dmoj/packet.py} --- giao thức phía judge (406 dòng).
+\item \f{judge-server/dmoj/problem.py} --- \c{init.yml} và test case (573 dòng).
+\item \f{judge-server/dmoj/cptbox/ptproc.cpp} và \f{isolate.py} --- sandbox.
+\item \f{OJ/judge/utils/problem_data_storage.py} và \f{problem_data.py} --- kho và \c{init.yml}.
+\item \f{OJ/dmoj/settings.py} --- mọi cấu hình mặc định và cờ.
+\end{enumerate}

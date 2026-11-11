@@ -1,0 +1,77 @@
+\section{Sự cố, bảo mật và các phát hiện từ việc đọc code}\label{sec:risks}
+
+\subsection{Ma trận sự cố}
+Mỗi dòng trả lời: nếu \emph{một} khối ngừng hoạt động thì người dùng và hệ thống thấy gì. Tất cả suy ra từ code (\tS hoặc \tI như đã ghi ở các mục trước), chưa gây sự cố thật.
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{2.9cm}L{2.5cm}L{2.7cm}Y@{}}
+\toprule
+Khối ngừng & Xem trang & Nộp bài & Chấm bài \\
+\midrule
+Django/uWSGI & Không & Không & Judge và \c{bridged} chạy tiếp; bài đang chấm \emph{vẫn hoàn tất và ghi DB}. \\
+MySQL & Không & Không & \c{bridged} không ghi được kết quả; judge vẫn chạy nhưng kết quả mất hoặc \c{IE}. \tI \\
+\c{bridged} & Có & Lỗi: bài thành \c{IE} ngay & Mất toàn bộ hàng đợi RAM; bài \c{QU/P/G} thành \c{IE} khi \c{bridged} lên lại; judge \emph{rảnh} tự nối lại (4 giây, tăng dần tới 60 giây); judge \emph{đang chấm} gặp lỗi gửi gói thì thoát tiến trình (\c{os._exit(1)}) và cần Docker/systemd khởi động lại. \\
+Một judge & Có & Có & Bài đang chấm trên nó thành \c{IE}; các judge khác chạy tiếp. \\
+Mọi judge hợp lệ cho (ngôn ngữ, kho) & Có & Có & Bài ở \c{QU} trong RAM cho tới khi có judge. \\
+Cache dùng chung (Redis) & Nhiều trang lỗi \tI & Lỗi \tI & Điểm vẫn lưu, mất sự kiện cuối và việc xoá cache. \tI \\
+Celery worker & Có & Có & Không ảnh hưởng chấm thường; rejudge hàng loạt không chạy. \\
+Celery broker & Một số thao tác lỗi \tI & Có & Có, trừ \c{on_long_queue.delay} có thể chặn \tI (mục \ref{sec:findings}). \\
+Celery beat & Có & Có & Có; mất 4 việc định kỳ. \\
+\c{wsevent} & Có (không tự cập nhật) & Có & Có. \\
+Kho test mất trên judge & Có & Có & Mỗi bài của đề đó thành \c{IE} (không tìm thấy \c{init.yml}). \tI \\
+Balancer & Có & Có & Judge sau balancer rời site; bài đang chạy qua nó bị huỷ. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Bảo mật và cấu hình mặc định}\label{sec:judgesec}
+\textbf{Phía site.} \f{dmoj/settings.py} là cấu hình \emph{phát triển}; \c{local_settings.py} phải ghi đè: \tS
+\begin{itemize}
+\item \c{SECRET_KEY}, ba khoá \c{EVENT_DAEMON_*_KEY} (\c{SUBMISSION}, \c{CONTEST}, \c{TICKET}, \c{NOTIFICATION}) đều là chuỗi cố định công khai trong repo. Khoá \c{SUBMISSION} quyết định tên kênh sự kiện của từng bài nộp (mục \ref{sec:events}); để mặc định thì ai cũng tính ra được kênh.
+\item \c{DEBUG = True}, \c{ALLOWED_HOSTS = []}, \c{DATABASES} là SQLite, \c{CACHES = {}}.
+\item \c{GLOBAL_API_KEY} mặc định là \c{test-api-key-123}; nó bảo vệ API đồng bộ kỳ thi: chỉ có hiệu lực khi \c{VNOJ_ENABLE_SYNC_API = True}.
+\item \c{bridged} mặc định nghe \c{localhost}; muốn judge ở máy khác nối vào phải đổi địa chỉ và \textbf{tự bảo vệ} cổng 9999: xác thực chỉ là cặp \c{id} + \c{key}, \c{Judge.auth_key} lưu \textbf{dạng thô} trong DB, giao thức không mã hoá. Nên đặt sau proxy TLS (judge có \c{--secure}) hoặc VPN, và cổng 9998 (Django $\to$ \c{bridged}, \emph{không xác thực}) chỉ nên mở cho localhost.
+\item Phản hồi \c{EventPostingError} khi đặt \c{EVENT_DAEMON_KEY} (mục \ref{sec:events}).
+\end{itemize}
+
+\textbf{Phía judge.} Những điểm sau đọc trực tiếp từ code:
+\begin{itemize}
+\item \textbf{Mạng trong giai đoạn biên dịch không bị chặn bởi sandbox.} \c{CompilerIsolateTracer} cho phép \c{socket}, \c{connect}, \c{sendto}, \c{recvfrom} (``we don't sandbox these''), trong khi sandbox \emph{chạy bài} trả \c{EACCES} cho \c{socket}. Nếu trình biên dịch của một ngôn ngữ có thể chạy mã do thí sinh viết ngay lúc biên dịch, mã đó có mạng chừng nào container có mạng ra ngoài. Biện pháp thực tế: chạy judge trong mạng không có đường ra. \tS (hậu quả \tI)
+\item \textbf{Mã trong thư mục bài được thực thi \emph{không} qua sandbox.} Checker có tên chứa dấu chấm được nạp bằng \c{exec(compile(...))} trong tiến trình worker (\f{utils/module.py}, \f{problem.py:load_checker}); \c{custom_judge} cũng vậy. Site \emph{không} sinh các khoá này (chỉ cho 7 checker, trong đó \c{bridged} chạy trong sandbox), nên chỉ rủi ro khi thư mục bài do người khác viết tay. Ai ghi được vào kho test data thì chạy được Python trên máy chấm. \tS
+\item \textbf{API điều khiển không xác thực} (\c{POST /update/problems}, \c{GET /metrics}) và trong Docker \textbf{mặc định nghe \c{0.0.0.0:15001}} nếu không đặt \c{--api-port} (\f{judgeenv.py:192}). Cần chặn bằng firewall hoặc proxy. \tS
+\item Judge \textbf{không được chạy bằng root} (\c{sanity_check}); script \c{entry} hạ quyền xuống người dùng \c{judge} bằng \c{setpriv}. Cần \c{--cap-add=SYS_PTRACE} trong Docker: một capability mạnh; nên cân nhắc cùng với \c{seccomp}/AppArmor của container và mạng cách ly. \tS
+\item \c{Judge.is_blocked} chặn judge theo tên ngay lúc bắt tay; \c{contest.banned_judges} loại judge khỏi kỳ thi. \tS
+\end{itemize}
+
+\subsection{Các phát hiện}\label{sec:findings}
+Những chỗ tôi thấy khác với kỳ vọng hoặc dễ gây nhầm khi đọc source, xếp theo mức đáng chú ý. Mỗi mục kèm độ chắc chắn.
+
+\finding{cS}{F1. Bộ hẹn giờ 20 giây ``judge không ack'' không bao giờ chạy \tS}{\c{JudgeHandler.submit} tạo \c{threading.Timer(20, self._kill_if_no_response)} (\f{judge_handler.py:245}) và \c{on_submission_acknowledged} gọi \c{.cancel()}, nhưng \textbf{không có lời gọi \c{.start()} nào} trong \f{judge/bridge/} hay \f{judge/balancer/} (grep \c{\.start()} chỉ ra các luồng khác). Ý đồ của mã là ngắt judge nào không xác nhận trong 20 giây. Thực tế judge ``câm'' chỉ bị phát hiện qua timeout socket 60 giây (\c{on_timeout} $\to$ \c{handle()} kết thúc $\to$ \c{on_disconnect}). Hậu quả nhỏ vì ping mỗi 10 giây, nhưng đây là mã chết.}
+
+\finding{cS}{F2. Khoá \c{short_circuit} trong \c{init.yml} không có tác dụng \tS}{\f{problem.py:331} khai báo mặc định \c{'short_circuit': True}, nhưng \f{judge.py:501} lấy giá trị từ \c{self.submission.short_circuit}, tức cờ do site gửi (\c{Problem.short_circuit}). Không nơi nào đọc \c{config.short_circuit}.}
+
+\finding{cI}{F3. Gọi Celery trong vùng giữ khoá của \c{JudgeList} \tI}{\c{JudgeList.judge} gọi \c{on_long_queue.delay(...)} \emph{bên trong} \c{with self.lock} (\f{judge_list.py:197--241}). Khi hàng đợi mức 0--1 từ 10 bài trở lên và broker không với tới được, kombu sẽ thử kết nối lại và ném lỗi; trong thời gian đó khoá bị giữ nên \c{register}, \c{on_judge_free}, \c{remove} của mọi judge phải chờ. Lỗi ném ra từ \c{judge()} làm \c{DjangoHandler} trả \c{bad-request}, và Django (\f{judgeapi.py:110}) đặt bài là \c{IE} \emph{dù bài đã nằm trong hàng đợi}; khi judge nhận bài, trạng thái sẽ tự sửa qua \c{P}/\c{G}/\c{D}. Cần chạy thử với broker tắt để xác nhận.}
+
+\finding{cI}{F4. Judge bị vô hiệu hoá có thể nhận một bài ngay khi nối lại \tI}{Trong \c{on_handshake}, \c{self.judges.register(self)} (dòng 180) chạy \emph{trước} \c{self._connected()} (dòng 182) mới đọc \c{is_disabled} từ DB. \c{is_disabled} khởi tạo \c{False} (dòng 70), nên lúc \c{register} $\to$ \c{_handle_free_judge}, \c{can_judge} cho qua và \c{min_tier} cũng tính judge đó; nếu hàng đợi có bài hợp lệ, bài được giao đi. Cờ chỉ có hiệu lực từ lúc đó trở đi. Cần chạy thử.}
+
+\finding{cI}{F5. \c{EVENT_DAEMON_KEY} và \c{daemon.js} không khớp \tI}{Đã nêu ở mục \ref{sec:events}.}
+
+\finding{cI}{F6. Lệnh \c{/update/problems} của judge gây lỗi log ở site \tI}{Judge v2 không có watchdog nên không tự gửi danh sách bài; nhưng nếu gọi \c{POST /update/problems} hay gửi \c{SIGUSR2}, luồng cập nhật vẫn gửi gói \c{supported-problems} (với danh sách rỗng). \c{bridged} \textbf{không có handler} cho gói này (chỉ balancer có \c{ignore_packet}) nên rơi vào \c{on_malformed}, ghi log lỗi. Vô hại về chức năng.}
+
+\finding{cS}{F7. Site không đẩy test data; cũng không biết judge nào đã có bài nào \tS}{Site không còn xử lý \c{supported-problems} và bảng \c{Judge} không có quan hệ tới bài. Phân phối theo \emph{kho} (\c{id}), không theo \emph{bài}. Nếu một bài nằm trong kho \c{A} mà một judge khai báo kho \c{A} nhưng thư mục của nó chưa có bài đó, judge nhận bài rồi báo \c{IE}. Đây là thiết kế: trách nhiệm đồng bộ thuộc về người vận hành.}
+
+\finding{cS}{F8. Balancer cần \c{judge_version: 2}; \c{storage-namespace} chỉ do balancer thêm \tS}{Xem mục \ref{sec:balancer}. \c{BridgeHandler} mặc định \c{judge_version=1} mà site từ chối.}
+
+\finding{cS}{F9. Backend S3 có giới hạn 1\,000 đối tượng cho đổi tên/xoá thư mục \tS}{Xem mục \ref{sec:storage}: \c{_iter_keys} ném \c{RuntimeError} khi \c{IsTruncated}.}
+
+\finding{cS}{F10. Nhị phân biên dịch bằng \c{-march=native} \tS}{Cờ mặc định của executor C/C++ (\f{c_like_executor.py:105}). Chấm trên nhiều máy CPU khác nhau cho cùng mã vẫn đúng (mỗi máy tự biên dịch), nhưng thời gian chạy có thể lệch giữa các máy; xem điều này khi hai judge có CPU khác thế hệ.}
+
+\subsection{Những điều chưa xác minh}\label{sec:unverified}
+Cần quan sát hệ thống chạy thật hoặc hỏi người vận hành:
+\begin{enumerate}
+\item \textbf{Cấu trúc triển khai của VNOI}: bao nhiêu máy chấm, có dùng tier và balancer không, \c{bridged} đặt cùng máy với web hay riêng. \tQ
+\item \textbf{Cách đồng bộ test data} từ site tới judge (NFS, rsync, mount S3, \ldots). \tQ
+\item Nội dung \f{websocket/config.js} (không có trong repo), cổng thật của \c{wsevent}, và cấu hình nginx. \tQ
+\item Cấu hình \c{LOGGING} (nơi các logger \c{judge.bridge}, \c{judge.json.bridge}, \c{judge.celery} trỏ tới). \tQ
+\item Broker Celery đang dùng (Redis hay RabbitMQ) và backend cache. \tQ
+\item Mọi mục gắn \tI: cần chạy thử bằng cách gây sự cố có kiểm soát (tắt broker, tắt Redis, nối lại judge bị vô hiệu hoá).
+\end{enumerate}

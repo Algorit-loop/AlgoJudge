@@ -1,0 +1,211 @@
+\section{Site \texorpdfstring{(\c{VNOI-Admin/OJ})}{(OJ)} chi tiết}\label{sec:site}
+
+\subsection{Bản đồ mã nguồn}
+Site là một project Django với app chính tên \c{judge}. Các thư mục ở gốc repo:
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.3cm}Y@{}}
+\toprule
+Thư mục / file & Vai trò \\
+\midrule
+\f{dmoj/} & \c{settings.py} (856 dòng, mọi cấu hình mặc định), \c{urls.py}, \c{celery.py}, \c{wsgi.py}, \c{wsgi_async.py}, hai \emph{logging handler} có giới hạn tần suất (\c{throttle_mail}, \c{throttle_discord_webhook}). \\
+\f{judge/models/} & Mô hình dữ liệu: \c{problem}, \c{problem_data}, \c{submission}, \c{contest}, \c{profile} (gồm \c{Organization}, quota), \c{runtime} (\c{Judge}, \c{Language}, \c{RuntimeVersion}), \c{comment}, \c{ticket}, \c{interface} (blog, thanh điều hướng, \c{MiscConfig}), \c{notification}. \\
+\f{judge/views/} & ${\sim}$35 module view (bài, kỳ thi, nộp bài, tổ chức, ticket, trạng thái judge, \ldots) và \f{views/api/api_v2.py}. \\
+\f{judge/admin/} & Giao diện admin của Django cho các model trên. \\
+\f{judge/bridge/} & \textbf{Daemon \c{bridged}}: \c{daemon}, \c{server}, \c{base_handler}, \c{django_handler}, \c{judge_handler}, \c{judge_list}. \\
+\f{judge/balancer/} & Balancer tuỳ chọn (nhiều site dùng chung một dàn judge). \\
+\f{judge/judgeapi.py}, \f{judge_priority.py} & Phía Django của giao thức tới \c{bridged}; bốn mức ưu tiên. \\
+\f{judge/tasks/} & Tác vụ Celery. \f{judge/event_poster*.py}: đăng sự kiện thời gian thực. \\
+\f{judge/contest_format/} & Luật tính điểm kỳ thi: \c{default}, \c{ioi}, \c{legacy_ioi}, \c{icpc}, \c{atcoder}, \c{ecoo}, \c{vnoj} (đăng ký ở \c{registry.py}). \\
+\f{judge/utils/} & Kho dữ liệu bài (\c{problem_data_storage}, \c{storages}), biên dịch \c{init.yml} (\c{problem_data}), client dịch vụ ngoài (\c{pdfoid}, \c{mathoid}, \c{texoid}, \c{camo}, \c{recaptcha}, \c{pwned}), \c{problem_archive}, \ldots \\
+\f{judge/ratings.py}, \f{performance_points.py} & Hệ số rating và điểm hiệu năng (PP) của người dùng. \\
+\f{judge/management/commands/} & \c{runbridged}, \c{runbalancer}, \c{addjudge}, \c{runmoss}, \c{create_problem}, \c{import_polygon_package}, \c{submit_polygon_solutions}, \c{render_pdf}, \c{adduser}, \c{batchadduser}, \ldots \\
+\f{templates/}, \f{resources/}, \f{judge/jinja2/} & Giao diện: template \textbf{Jinja2} (không phải template Django mặc định), SCSS/JS, bộ lọc Jinja. \\
+\f{django_ace/}, \f{martor/}, \f{urlshortener/} & Trình soạn thảo Ace, trình soạn Markdown, và một app rút gọn link riêng. \\
+\f{websocket/} & Daemon \c{wsevent} bằng Node.js (\c{daemon.js}, \c{queue.js}). \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Lớp web}\label{sec:web}
+\textbf{Cấu hình và middleware.} \c{MIDDLEWARE} gồm 19 lớp (\f{dmoj/settings.py:475}). Những lớp đáng chú ý: \c{ShortCircuitMiddleware} (cho view đánh dấu \c{short_circuit_middleware}, trả lời không qua phần còn lại), \c{DMOJLoginMiddleware} (ép đăng nhập 2FA và đổi mật khẩu bị lộ), \c{ContestMiddleware} (đưa người dùng đang thi vào ngữ cảnh kỳ thi), \c{ImpersonateMiddleware}. \tS
+
+\textbf{Xác thực.} Backend: Google OAuth2, Facebook OAuth2, GitHub (chỉ nhận email đã xác minh), \c{ModelBackend}, và \c{IPBasedAuthBackend}. Hai lớp 2FA: TOTP và WebAuthn. Site còn là \emph{nhà cung cấp OAuth2} (\c{django-oauth-toolkit}, \c{VNOIOAuthValidator}) và có API token cá nhân. Có cả \emph{API đồng bộ kỳ thi} (\c{/api/v2/sync/...}), \textbf{tắt mặc định} (\c{VNOJ_ENABLE_SYNC_API = False}), bảo vệ bằng \c{GLOBAL_API_KEY}. \tS
+
+\textbf{Giao diện.} Template Jinja2 qua \c{django_jinja}; tĩnh qua \c{django_compressor}; \f{make_style.sh} dùng \c{sass} và \c{postcss} để sinh hai bộ CSS (sáng và tối) từ \f{resources/}. Trình soạn mã là Ace, trình soạn Markdown là martor, toán dùng MathJax hoặc dịch vụ mathoid/texoid. \tS
+
+\textbf{Chế độ vận hành đặc biệt.} \c{VNOJ_LOW_POWER_MODE} giới hạn số trang submission và vẽ heat map khi tải cao; \c{VNOJ_OFFICIAL_CONTEST_MODE} ghi IP khi nộp bài và không ép đổi mật khẩu. \tS
+
+\textbf{Nộp bài.} Luồng nằm trong \f{judge/views/problem.py:handle_submission_post}: kiểm tra giới hạn (\c{DMOJ_SUBMISSION_LIMIT = 2} bài chưa chấm xong trừ người có quyền \c{spam_submission}), ngôn ngữ được phép, người bị cấm, số lần nộp tối đa, \emph{credit} của tổ chức; rồi trong một \c{transaction.atomic()} tạo \c{Submission}, \c{ContestSubmission} (nếu đang thi), \c{SubmissionSource}; sau cùng gọi \c{new_submission.judge(force_judge=True, ...)}. Chỉ \textbf{sau} khi giao dịch DB kết thúc mới gửi yêu cầu tới \c{bridged}. \tS
+
+\subsection{Lớp dữ liệu}\label{sec:data}
+\textbf{Mô hình chính} (rút gọn):
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.6cm}Y@{}}
+\toprule
+Thực thể & Quan hệ và ghi chú \\
+\midrule
+\c{Submission} & FK tới \c{Profile}, \c{Problem}, \c{Language}, \c{Judge} (\c{judged_on}), \c{Contest} (\c{contest_object}). Trạng thái \c{status} $\in$ \{QU, P, G, D, IE, CE, AB\}, kết quả \c{result} $\in$ \{AC, PAC, WA, TLE, MLE, OLE, IR, RTE, CE, IE, SC, AB\}. Nhiều chỉ mục kép cho trang danh sách/xếp hạng (\f{models/submission.py}). \tS \\
+\c{SubmissionSource} & 1--1 với \c{Submission}; mã nguồn (tối đa 65\,536 ký tự). Tách bảng để bảng \c{Submission} nhẹ. \tS \\
+\c{SubmissionTestCase} & Nhiều dòng cho mỗi \c{Submission}; \c{unique(submission, case)}; có \c{status}, \c{time}, \c{memory}, \c{points}, \c{total}, \c{batch}, \c{feedback}, \c{output}. Khi chấm lại, toàn bộ bị xoá. \tS \\
+\c{Problem}, \c{ProblemData}, \c{ProblemTestCase} & \c{Problem.code} là \emph{id} mà judge dùng (\c{problem-id}); \c{Problem.storage} chọn kho; \c{ProblemData} giữ file zip, generator, checker, grader tuỳ chỉnh; \c{ProblemTestCase} là từng dòng cấu hình test. \tS \\
+\c{LanguageLimit} & Giới hạn thời gian/bộ nhớ riêng cho từng cặp (bài, ngôn ngữ); \c{bridged} đọc khi giao việc. \tS \\
+\c{Contest}, \c{ContestProblem}, \c{ContestParticipation}, \c{ContestSubmission} & \c{ContestSubmission} nối bài nộp với bài trong kỳ thi và lượt tham gia. \c{Contest.banned_judges} cho phép loại judge khỏi kỳ thi. \tS \\
+\c{Judge}, \c{RuntimeVersion}, \c{Language} & \c{Judge}: \c{name}, \c{auth_key} (lưu \textbf{dạng thô}), \c{is_blocked}, \c{is_disabled}, \c{tier}, \c{online}, \c{ping}, \c{load}, \c{storages} (JSON), \c{runtimes} (M2M tới \c{Language}). Bảng này do \c{bridged} cập nhật khi judge nối vào. \tS \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Cơ sở dữ liệu.} Mặc định của \c{settings.py} là \textbf{SQLite}, nhưng CI chạy trên \textbf{MySQL 8.0} (\f{.github/workflows/build.yml}) và \c{requirements.txt} có \c{mysqlclient}. Code có phần dành riêng cho MySQL: \f{judge/dblock.py} dùng \c{LOCK TABLES}, \f{judge/fulltext.py} dùng \c{MATCH ... AGAINST}, \f{performance_points.py} chọn \c{STRAIGHT_JOIN} khi \c{connection.vendor == 'mysql'}. Vì vậy MySQL/MariaDB là lựa chọn thực tế. \tS
+
+\textbf{Cache và session.} \c{CACHES = {}} trong \c{settings.py}, nghĩa là phải đặt trong \c{local_settings.py}. Session là \c{cached_db}. Có 24 module trong \f{judge/} import API cache chuẩn của Django, và tín hiệu (\f{judge/signals.py}) \emph{xoá cache theo sự kiện} (sửa bài thì xoá fragment HTML, PDF đã render, metadata). Muốn xoá đúng khi có nhiều tiến trình thì cache phải \emph{dùng chung}; \c{LocMemCache} (mặc định của Django, và là thứ CI dùng) không đáp ứng. \tS \tI
+
+\textbf{Kho test data.} Xem mục \ref{sec:storage}.
+
+\subsection{\texorpdfstring{\c{bridged}}{bridged}: bộ điều phối chấm bài}\label{sec:bridged}
+Đây là phần quan trọng nhất của kiến trúc nên được đọc kỹ nhất. Code ở \f{judge/bridge/} (khoảng 1\,050 dòng).
+
+\subsubsection{Cấu trúc tiến trình}
+\c{judge_daemon()} (\f{daemon.py}) làm bốn việc theo thứ tự: (1) \c{reset_judges()}: đặt mọi \c{Judge} thành offline; (2) \textbf{đổi mọi bài nộp đang ở trạng thái \c{QU}, \c{P}, \c{G} thành \c{IE}} (\c{Submission.IN_PROGRESS_GRADING_STATUS}); (3) tạo một \c{JudgeList} duy nhất; (4) mở hai server TCP chạy trong hai luồng: server cho Django (\c{BRIDGED_DJANGO_ADDRESS}, 9998) và server cho judge (\c{BRIDGED_JUDGE_ADDRESS}, 9999). Mỗi server là \c{ThreadingMixIn + TCPServer} nên \textbf{mỗi kết nối được một luồng riêng}. Tín hiệu \c{SIGINT/SIGQUIT/SIGTERM} làm daemon tắt. \tS
+
+Bước (2) có hệ quả: \textbf{hàng đợi của \c{bridged} chỉ nằm trong RAM}. Khởi động lại \c{bridged} là bỏ toàn bộ bài đang chờ và đang chấm (đặt \c{IE}); người dùng phải nộp lại hoặc admin rejudge. \tS
+
+\begin{center}\begin{minipage}{\textwidth}\centering
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners=2pt,minimum height=0.95cm,align=center,font=\footnotesize,line width=0.5pt},
+  web/.style={box,fill=web}, dat/.style={box,fill=dat}, asy/.style={box,fill=asy}, jud/.style={box,fill=jud},
+  arr/.style={-{Stealth[length=2mm]},line width=0.5pt},
+  lab/.style={font=\scriptsize,fill=white,inner sep=1pt}
+]
+\node[web,minimum width=2.4cm] (dj) at (0,3.4) {Django\\(uWSGI)};
+\node[jud,minimum width=3.9cm] (dh) at (5.6,3.4) {\c{DjangoHandler}\\1 luồng cho mỗi yêu cầu};
+\node[jud,minimum width=11.4cm,minimum height=2.7cm,align=left,font=\footnotesize,text width=10.8cm] (jl) at (5.6,0)
+ {\textbf{JudgeList} --- một \c{RLock} chung cho mọi thao tác\\[3pt]
+  \c{queue}: dllist + 4 marker ưu tiên \quad \c{node_map}: id bài $\to$ nút hàng đợi\\
+  \c{submission_map}: id bài $\to$ judge \quad \c{judges}: tập judge đang nối\\
+  \c{min_tier}: tier thấp nhất còn online\\
+  \c{judge()}, \c{abort()}, \c{register()}, \c{remove()}, \c{on_judge_free()}};
+\node[jud,minimum width=4.4cm] (jh) at (5.6,-3.5) {\c{JudgeHandler}\\1 luồng + 1 luồng ping cho mỗi judge};
+\node[jud,minimum width=2.4cm] (jd) at (11.4,-3.5) {Judge\\(máy chấm)};
+\node[dat,minimum width=2.4cm] (db) at (0,-3.5) {MySQL};
+\node[asy,minimum width=2.4cm] (ws) at (5.6,-5.6) {wsevent};
+\draw[arr] (dj) -- node[lab,above=1pt]{TCP :9998} (dh);
+\draw[arr] (dh.south) -- node[lab,right=2pt]{\c{judge()}, \c{abort()}} (dh.south |- jl.north);
+\draw[arr] ($(jh.north)+(-1.2,0)$) -- node[lab,left=2pt]{\c{register}, \c{on_judge_free}, \c{remove}} ($(jl.south)+(-1.2,0)$);
+\draw[arr] ($(jl.south)+(1.2,0)$) -- node[lab,right=2pt]{\c{submit()}} ($(jh.north)+(1.2,0)$);
+\draw[arr,<->] (jh) -- node[lab,above=1pt]{TCP :9999} (jd);
+\draw[arr] (jh) -- node[lab,above=1pt]{ghi bằng ORM} (db);
+\draw[arr] (jh) -- node[lab,right=2pt]{\c{event.post}} (ws);
+\end{tikzpicture}
+\par\vspace{3pt}\small\raggedright\textbf{Hình 2.} Bên trong \c{bridged}. Mọi thay đổi trạng thái hàng đợi và tập judge đều đi qua một \c{RLock} duy nhất trong \c{JudgeList}. \c{DjangoHandler} chỉ đẩy việc vào \c{JudgeList}; \c{JudgeHandler} là nơi ghi kết quả vào MySQL và đăng sự kiện. \end{minipage}\end{center}
+
+\subsubsection{Khung gói tin}
+Cả hai phía dùng cùng một khung (\f{base_handler.py}): \emph{4 byte độ dài (big-endian) + JSON UTF-8 nén zlib}. Kích thước gói tối đa 8\,MiB; vượt mức này thì bị ngắt. Có sẵn xử lý giao thức PROXY nếu IP nguồn nằm trong \c{BRIDGED_JUDGE_PROXIES}. \tS
+
+\subsubsection{Giao thức Django $\leftrightarrow$ \c{bridged}}
+\f{judge/judgeapi.py} (phía Django) và \f{django_handler.py} (phía bridged). Mỗi yêu cầu mở một kết nối mới, gửi một gói, đọc một gói trả lời, rồi đóng (\c{DjangoHandler.on_packet} luôn \c{raise Disconnect()} sau khi trả lời). \tS
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.5cm}L{5.2cm}Y@{}}
+\toprule
+Yêu cầu & Trường chính & Trả lời / tác dụng \\
+\midrule
+\c{submission-request} & \c{submission-id}, \c{problem-id} (= \c{Problem.code}), \c{storage}, \c{language} (khoá), \c{source}, \c{judge-id}, \c{banned-judges}, \c{priority} (0--3) & \c{submission-received}. Nếu \c{priority} ngoài khoảng: \c{bad-request}. \\
+\c{terminate-submission} & \c{submission-id} & \c{judge-aborted}: \c{true} nếu đã báo judge dừng; \c{false} nếu bài còn trong hàng đợi và đã bị gỡ ra. \\
+\c{disconnect-judge} & \c{judge-id}, \c{force} & Ngắt judge (cứng hoặc gửi \c{disconnect}). \\
+\c{disable-judge} & \c{judge-id}, \c{is-disabled} & Cập nhật cờ vô hiệu hoá trong bộ nhớ và tính lại \c{min_tier}. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Phía Django khi gọi \c{judge_submission}} (\f{judgeapi.py:56}) làm đúng thứ tự: (0) xác định \c{is_pretested} và \c{priority} (mức 0 nếu bài thuộc kỳ thi, 1 nếu thường); (1) cập nhật bài về \c{QU} \emph{có điều kiện} \c{exclude(status__in=('P','G'))}; nếu không dòng nào đổi thì trả \c{False} (chống chấm đôi); (2) xoá \c{SubmissionTestCase} cũ; (3) tính \c{banned_judges} nếu bài thuộc lượt thi trực tiếp hoặc xem; (4) nâng mức ưu tiên lên 2 (rejudge) hoặc 3 (rejudge hàng loạt) nếu cần; (5) gửi yêu cầu. Nếu gửi lỗi hoặc trả lời sai thì đặt \c{IE}. \tS
+
+\textbf{Bốn mức ưu tiên} (\f{judge_priority.py}): \c{CONTEST_SUBMISSION_PRIORITY = 0}, \c{DEFAULT_PRIORITY = 1}, \c{REJUDGE_PRIORITY = 2}, \c{BATCH_REJUDGE_PRIORITY = 3}. \tS
+
+\subsubsection{Giao thức judge $\leftrightarrow$ \c{bridged}}
+Phía judge: \f{dmoj/packet.py}. Phía bridged: \f{judge_handler.py}. Bắt tay: judge gửi \c{handshake} gồm \c{id}, \c{key}, \c{version}, \c{executors}, \c{storages}, \c{problems}. \c{bridged}: (a) \textbf{từ chối} \c{version == 1} (dòng 164--167); (b) tra bảng \c{Judge} theo \c{id}, so khoá bằng \c{hmac.compare_digest}, từ chối nếu \c{is_blocked}; (c) lưu \c{storages} (tập các \c{id}) và \c{executors}; (d) trả \c{handshake-success}, đăng ký vào \c{JudgeList}, bật luồng ping; (e) ghi bảng \c{Judge} (\c{online}, \c{start_time}, \c{last_ip}, \c{runtimes}, \c{RuntimeVersion}). Timeout socket là 15 giây trước khi bắt tay và 60 giây sau đó. \tS
+
+\begin{center}\small
+\begin{longtable}{@{}L{3.9cm}L{9.0cm}@{}}
+\toprule
+Gói từ judge & Tác dụng trong \c{bridged} \\
+\midrule
+\endhead
+\f{submission-acknowledged} & Xác nhận đúng bài; đặt \c{status='P'}, \c{judged_on=judge}; đăng sự kiện \c{processing}. Sai id thì đặt \c{IE} cho cả hai bài và ngắt judge. \\
+\c{grading-begin} & \c{status='G'}, \c{is_pretested}, \c{current_testcase=1}, \c{judged_date=now}; \textbf{xoá} test case cũ. \\
+\c{compile-message} & Ghi cảnh báo biên dịch vào \c{Submission.error}. \\
+\c{compile-error} & \c{status='CE'}, \c{result='CE'}, \c{error=log}; giải phóng judge. \\
+\c{batch-begin} / \c{batch-end} & Tăng số thứ tự batch (\c{batch_id}); bài đánh dấu \c{batch=True}. Các \c{test-case-status} nằm giữa được gán số batch này. \\
+\c{test-case-status} & Mỗi gói chứa nhiều case (judge gom và gửi mỗi 0,25 giây). \c{bulk_create} \c{SubmissionTestCase}; dịch cờ trạng thái thành mã (bảng phía dưới). Đăng sự kiện, tối đa 5 lần mỗi 0,5 giây cho một bài. \\
+\c{grading-end} & \textbf{Tính điểm và kết luận} (mục \ref{sec:scoring}), \c{status='D'}; cập nhật điểm người dùng, thống kê bài, kỳ thi, credit; xoá cache; đăng sự kiện. \\
+\c{internal-error} & \c{status='IE'}, \c{error=message}; giải phóng judge. \\
+\c{submission-terminated} & \c{status='AB'}, \c{points=0}. \\
+\c{ping-response} & Cập nhật độ trễ (trung bình 6 mẫu), lệch đồng hồ, \c{load}; ghi \c{Judge.ping}, \c{Judge.load}. \\
+\c{executors} & Judge báo lại danh sách runtime; cập nhật \c{RuntimeVersion}. \\
+\bottomrule
+\end{longtable}
+\end{center}
+Gói \c{bridged} gửi cho judge: \c{handshake-success}, \c{ping} (mỗi 10 giây), \c{submission-request} (kèm \c{time-limit}, \c{memory-limit}, \c{short-circuit}, và \c{meta} gồm \c{pretests-only}, \c{in-contest}, \c{attempt-no}, \c{user}, \c{file-only}, \c{file-size-limit}), \c{terminate-submission}, \c{disconnect}. \tS
+
+\textbf{Dịch cờ của judge thành mã test case.} Judge gửi một số nguyên cờ (\f{dmoj/result.py}: \c{WA}=1, \c{RTE}=2, \c{TLE}=4, \c{MLE}=8, \c{IR}=16, \c{SC}=32, \c{OLE}=64). Bridge kiểm tra theo thứ tự ưu tiên \c{TLE} $>$ \c{MLE} $>$ \c{OLE} $>$ \c{RTE} $>$ \c{IR} $>$ \c{WA} $>$ \c{SC}; nếu không có cờ nào thì \c{AC} khi \c{points == total-points}, ngược lại \c{PAC}. \tS
+
+\subsubsection{Máy trạng thái của một bài nộp}
+\begin{center}\begin{minipage}{\textwidth}\centering
+\begin{tikzpicture}[
+  st/.style={draw,circle,minimum size=0.95cm,font=\small\bfseries,line width=0.6pt},
+  ok/.style={st,fill=dat},wk/.style={st,fill=asy},bd/.style={st,fill=jud},
+  arr/.style={-{Stealth[length=2mm]},line width=0.5pt},
+  lab/.style={font=\scriptsize,align=center,inner sep=1pt}
+]
+\node[wk] (qu) at (0,0) {QU};
+\node[wk] (p) at (4.3,0) {P};
+\node[wk] (g) at (8.6,0) {G};
+\node[ok] (d) at (12.9,0) {D};
+\node[bd] (ce) at (4.3,-2.5) {CE};
+\node[bd] (ie) at (8.6,-2.5) {IE};
+\node[bd] (ab) at (12.9,-2.5) {AB};
+\draw[arr] (qu) -- node[lab,above=1pt]{\c{submission-}\\\c{acknowledged}} (p);
+\draw[arr] (p) -- node[lab,above=1pt]{\c{grading-begin}} (g);
+\draw[arr] (g) -- node[lab,above=1pt]{\c{grading-end}} (d);
+\draw[arr] (p) -- node[lab,left=1pt]{\c{compile-error}} (ce);
+\draw[arr] (g) -- node[lab,left=1pt]{\c{internal-error}} (ie);
+\draw[arr] (g) -- node[lab,above right=0pt and 0pt,pos=0.55]{\c{submission-}\\\c{terminated}} (ab);
+\draw[arr,dashed] (qu.south) -- ++(0,-2.9) -| (ie.south);
+\node[lab,fill=white] at (4.3,-3.4) {bridged khởi động lại, gửi yêu cầu lỗi, hoặc abort khi còn chờ};
+\draw[arr,dashed] (d.north) -- ++(0,0.8) -| node[lab,fill=white,pos=0.25]{rejudge} (qu.north);
+\end{tikzpicture}
+\par\vspace{3pt}\small\raggedright\textbf{Hình 3.} Các trạng thái và gói tin gây chuyển trạng thái. Nét đứt là chuyển từ phía Django hoặc khi khởi động lại \c{bridged}. \c{IE} còn xảy ra khi judge ngắt kết nối giữa lúc chấm (\f{judge_handler.py:on_disconnect}). Với \c{abort} một bài còn trong hàng đợi, \c{bridged} trả \c{judge-aborted=false} và Django đặt \c{AB}. \end{minipage}\end{center}
+
+\subsubsection{Lập lịch trong \texorpdfstring{\c{JudgeList}}{JudgeList}}
+\f{judge/bridge/judge_list.py}. Khi có bài mới (\c{judge()}), hoặc khi một judge rảnh (\c{_handle_free_judge}), quy tắc như sau. \tS
+\begin{enumerate}
+\item \textbf{Tier.} Chỉ judge có \c{tier} bằng \c{min_tier} (tier nhỏ nhất trong các judge online và không bị vô hiệu hoá) được dùng. Tier lớn hơn chỉ nhận việc khi tier nhỏ hơn không còn judge nào. Đây là cơ chế dự phòng nóng.
+\item \textbf{Ứng viên.} Judge không nằm trong \c{banned-judges}, có \c{storage} của bài trong tập \c{storages} đã khai báo, có \c{language} trong \c{executors}, và hoặc không bị vô hiệu hoá hoặc là judge được chỉ định đích danh (\c{judge-id}). Đây là hàm \c{can_judge}.
+\item \textbf{Chọn.} Trong các ứng viên đang rảnh, chọn judge có \c{load} thấp nhất (hoà thì chọn ngẫu nhiên): \c{min(available, key=(load, random()))}. \c{load} là load-average 1 phút chia số CPU mà judge báo trong \c{ping-response}.
+\item \textbf{Không có judge rảnh} thì chèn vào \c{queue}: chèn \emph{ngay trước marker} của mức ưu tiên, nên mỗi mức là một hàng FIFO và mức nhỏ được duyệt trước.
+\item \textbf{Giữ chỗ cho bài quan trọng.} Nếu mức ưu tiên $\ge 2$ (rejudge) và tier hiện tại có hơn một ứng viên nhưng chỉ còn $\le 1$ judge rảnh, bài \emph{không} được giao; judge cuối cùng được giữ cho bài thi và bài nộp thường (dòng 217--218 và hàm \c{should_reserve_judge}).
+\item \textbf{Cảnh báo hàng đợi dài.} Khi tổng số bài mức 0 và 1 đang chờ $\ge$ \c{VNOJ_LONG_QUEUE_ALERT_THRESHOLD} (10) thì gọi tác vụ Celery \c{on_long_queue.delay(...)} để báo Discord. Lời gọi này nằm \textbf{trong vùng giữ khoá} của \c{JudgeList} (dòng 197--241). \tI Hệ quả được bàn ở mục \ref{sec:findings}.
+\end{enumerate}
+
+\begin{center}\begin{minipage}{\textwidth}\centering
+\begin{tikzpicture}[
+  it/.style={draw,minimum width=0.95cm,minimum height=0.7cm,font=\scriptsize,line width=0.4pt,fill=white},
+  mk/.style={draw,diamond,aspect=1.2,inner sep=1pt,font=\scriptsize\bfseries,line width=0.6pt},
+  arr/.style={-{Stealth[length=1.8mm]},line width=0.5pt}
+]
+\node[it,fill=jud!60] (a1) at (0,0) {\#101};
+\node[it,fill=jud!60,right=0.1cm of a1] (a2) {\#102};
+\node[mk,fill=jud,right=0.2cm of a2] (m0) {M0};
+\node[it,fill=asy,right=0.2cm of m0] (b1) {\#103};
+\node[mk,fill=asy,right=0.2cm of b1] (m1) {M1};
+\node[it,fill=web,right=0.2cm of m1] (c1) {\#104};
+\node[it,fill=web,right=0.1cm of c1] (c2) {\#105};
+\node[mk,fill=web,right=0.2cm of c2] (m2) {M2};
+\node[it,fill=ext,right=0.2cm of m2] (d1) {\#106};
+\node[mk,fill=ext,right=0.2cm of d1] (m3) {M3};
+\draw[arr] (-1.0,0) -- (a1.west);
+\node[font=\scriptsize,anchor=east] at (-1.0,0) {đầu};
+\draw[decorate,decoration={brace,mirror,amplitude=3pt}] (a1.south west) -- (m0.south east) node[midway,below=4pt,font=\scriptsize,align=center]{0: thi};
+\draw[decorate,decoration={brace,mirror,amplitude=3pt}] (b1.south west) -- (m1.south east) node[midway,below=4pt,font=\scriptsize,align=center]{1: thường};
+\draw[decorate,decoration={brace,mirror,amplitude=3pt}] (c1.south west) -- (m2.south east) node[midway,below=4pt,font=\scriptsize,align=center]{2: rejudge};
+\draw[decorate,decoration={brace,mirror,amplitude=3pt}] (d1.south west) -- (m3.south east) node[midway,below=4pt,font=\scriptsize,align=center]{3: rejudge hàng loạt};
+\end{tikzpicture}
+\par\vspace{3pt}\small\raggedright\textbf{Hình 4.} \c{SubmissionQueue} là một danh sách liên kết đôi chứa \emph{cả bài và 4 marker}. Bài mới chèn ngay trước marker của mức mình. Judge rảnh duyệt từ đầu nên luôn lấy bài mức nhỏ nhất, cũ nhất. Mức 2 và 3 còn chịu quy tắc ``giữ chỗ''. \end{minipage}\end{center}

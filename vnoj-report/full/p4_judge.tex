@@ -1,0 +1,201 @@
+\section{Judge server \texorpdfstring{(\c{VNOI-Admin/judge-server})}{(judge-server)} chi tiết}\label{sec:judge}
+
+\subsection{Bản đồ mã nguồn}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.6cm}Y@{}}
+\toprule
+Thành phần & Vai trò \\
+\midrule
+\f{dmoj/judge.py} (703 dòng) & Lớp \c{Judge} (điều khiển), \c{JudgeWorker} (tiến trình con chấm một bài), các thông điệp IPC, hàm \c{main()}. \\
+\f{dmoj/packet.py} (406) & \c{PacketManager}: kết nối TCP tới \c{bridged}, bắt tay, đọc/ghi gói, tự nối lại. \\
+\f{dmoj/judgeenv.py} (369) & Đọc cấu hình, tham số dòng lệnh, danh sách kho test, phiên bản runtime. \\
+\f{dmoj/problem.py} (573) & \c{Problem}, \c{TestCase}, \c{BatchedTestCase}: đọc \c{init.yml}, ghép test, chạy generator, chọn checker. \\
+\f{dmoj/graders/} & Cách chấm một test: \c{standard}, \c{interactive} (kiểu \c{bridged}), \c{communication}, \c{signature}, \c{output_only}, \c{custom}. \\
+\f{dmoj/checkers/} & Cách so sánh đầu ra: 12 module Python và một module C nhanh (\c{_checker.c}). \\
+\f{dmoj/executors/} & 87 file: khoảng 70 executor ngôn ngữ (một file mỗi ngôn ngữ, tên viết hoa) và các lớp nền (\c{base_executor}, \c{compiled_executor}, \c{c_like_executor}, \c{python_executor}, \c{java_executor}, \ldots). \\
+\f{dmoj/cptbox/} & \textbf{Sandbox}: lõi Cython/C++ (\c{_cptbox.pyx}, \c{ptproc.cpp}, \c{helper.cpp}, \c{ptdebug_*.cpp} cho x86/x64/ARM/ARM64/FreeBSD) và chính sách bằng Python (\c{isolate.py}, \c{tracer.py}, \c{filesystem_policies.py}). \\
+\f{dmoj/contrib/} & Quy ước mã thoát của checker/interactor: \c{default}, \c{testlib}, \c{cms}, \c{coci}, \c{peg}, \c{themis}. \\
+\f{dmoj/cli.py}, \f{commands/} & \c{dmoj-cli}: chấm cục bộ, không cần site. \\
+\f{dmoj/monitor.py}, \f{control.py}, \f{sysinfo.py} & Theo dõi thư mục bài (watchdog), API điều khiển HTTP + \c{/metrics}, báo load qua \c{ping}. \\
+\f{.docker/} & Dockerfile cho 5 ``tier'' (\c{tier1}, \c{tier2}, \c{tier3}, \c{tiericpc}, \c{tiervnoj}) và script \c{entry}. \\
+\f{testsuite/}, \f{dmoj/testsuite.py} & 69 bộ bài/test để kiểm thử chính judge (cả executor, grader, checker). \\
+\f{setup.py} & Ba lệnh: \c{dmoj} (judge), \c{dmoj-cli}, \c{dmoj-autoconf} (dò đường dẫn runtime). \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Mô hình tiến trình}\label{sec:judgeproc}
+\textbf{Một tiến trình \c{dmoj} chấm đúng một bài tại một thời điểm.} \c{Judge.begin_grading} lấy \c{_grading_lock} (dòng 137) và nhả khi chấm xong; bài thứ hai gửi tới trong lúc đó sẽ chờ khoá. Phía site cũng làm đúng điều này: \c{JudgeHandler.working} bật khi giao bài và tắt khi \c{grading-end}, \c{compile-error}, \c{internal-error}, hay \c{submission-terminated}. Muốn chấm song song nhiều bài thì \textbf{chạy nhiều tiến trình judge với tên khác nhau}, mỗi cái là một bản ghi \c{Judge} trên site. \tS
+
+\begin{center}\begin{minipage}{\textwidth}\centering
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners=2pt,align=center,font=\footnotesize,line width=0.5pt,minimum height=0.85cm},
+  thr/.style={box,fill=jud!55,minimum width=4.6cm},
+  wrk/.style={box,fill=asy,minimum width=4.6cm},
+  sb/.style={box,fill=white,minimum width=4.2cm},
+  arr/.style={-{Stealth[length=2mm]},line width=0.5pt},
+  lab/.style={font=\scriptsize,fill=white,inner sep=1pt,align=center}
+]
+\node[box,fill=web,minimum width=2.6cm] (site) at (0,5.0) {\c{bridged}\\(site)};
+\node[box,fill=dat,minimum width=2.6cm] (dir) at (8.6,5.0) {Thư mục bài\\\c{init.yml}, zip};
+\node[draw,dashed,rounded corners=4pt,minimum width=5.4cm,minimum height=7.3cm,label={[font=\footnotesize]below:Tiến trình chính \c{dmoj}}] (main) at (0,0.2) {};
+\node[draw,dashed,rounded corners=4pt,minimum width=5.4cm,minimum height=7.3cm,label={[font=\footnotesize]below:Tiến trình con (\c{fork}) cho mỗi bài}] (w) at (8.6,0.2) {};
+\node[thr] (net) at (0,2.7) {Luồng mạng\\\c{PacketManager.read_forever}};
+\node[thr] (flush) at (0,1.5) {Luồng gom kết quả\\gửi \c{test-case-status} mỗi 0,25 s};
+\node[thr] (upd) at (0,0.3) {Luồng cập nhật bài\\(watchdog, SIGUSR2, API)};
+\node[thr] (ctl) at (0,-0.9) {Luồng API điều khiển (tuỳ chọn)\\\c{/metrics}, \c{/update/problems}};
+\node[thr,fill=jud] (grd) at (0,-2.6) {Luồng chấm\\\c{grading_thread_main}};
+\node[wrk] (prob) at (8.6,2.7) {Dựng \c{Problem}\\đọc \c{init.yml}, mở zip};
+\node[wrk] (grader) at (8.6,1.4) {Dựng grader\\biên dịch bài nộp};
+\node[sb] (sub) at (8.6,0.05) {Tiến trình trong sandbox:\\chương trình thí sinh};
+\node[sb] (chk) at (8.6,-1.3) {Tiến trình trong sandbox:\\checker, interactor, generator};
+\node[wrk] (cmp) at (8.6,-2.6) {Gom \c{Result}\\gửi lên qua IPC};
+\draw[arr,<->] (site) -- node[lab,pos=0.35]{TCP :9999} (net.north);
+\draw[arr,dashed] (dir) -- (prob.north);
+\draw[arr] (prob) -- (grader);
+\draw[arr] (grader) -- (sub);
+\draw[arr] (sub) -- (chk);
+\draw[arr] (chk) -- (cmp);
+\draw[arr] (net.west) -- ++(-0.3,0) |- (grd.west);
+\node[lab,rotate=90] at (-2.55,0.0) {\c{begin_grading}};
+\draw[arr,<->] (grd.east) -- node[lab,above=1pt]{\c{Pipe}\\IPC} (cmp.west);
+\end{tikzpicture}
+\par\vspace{3pt}\small\raggedright\textbf{Hình 6.} Mô hình tiến trình của một judge. Luồng mạng nhận bài, luồng chấm sinh một tiến trình con để cô lập lỗi (kể cả crash) khỏi tiến trình điều khiển; kết quả đi ngược qua pipe, và luồng mạng/gom kết quả đẩy lên site. \end{minipage}\end{center}
+
+Vì sao cần tiến trình con: \c{JudgeWorker} chấm trong một tiến trình \c{fork} riêng (\c{multiprocessing}, kiểu \c{fork}) nên crash hoặc rò bộ nhớ của grader/checker không làm chết judge, và có thể \c{SIGKILL} cả tiến trình con nếu nó treo. Luồng chấm đợi tin từ worker tối đa $\max(60, 2\cdot\text{time\_limit})$ giây; quá hạn thì giết worker và báo \c{internal-error}. Khi hết bài, \c{wait_with_timeout} chờ tối đa 60 giây rồi \c{SIGKILL}. \tS
+
+Mười hai loại thông điệp IPC (\c{IPC.HELLO}, \c{BYE}, \c{COMPILE-ERROR}, \c{COMPILE-MESSAGE}, \c{RESULT}, \c{BATCH-BEGIN}, \c{BATCH-END}, \c{GRADING-BEGIN}, \c{GRADING-END}, \c{GRADING-ABORTED}, \c{UNHANDLED-EXCEPTION}, \c{REQUEST-ABORT}) ánh xạ gần 1--1 sang các gói gửi site (\f{judge.py:_grading_thread_main}). \tS
+
+\subsection{Cấu hình và khởi động}
+\textbf{Cấu hình.} Lệnh: \c{dmoj <host> [tên] [khoá] [-p 9999] [-c ~/.dmojrc] [-s TLS] [-a API-port]}. File YAML (\c{-c}) chứa: \c{id} và \c{key} (hoặc biến \c{DMOJ_JUDGE_NAME}, \c{DMOJ_JUDGE_KEY}); \c{problem_storage_globs}; \c{judge_version}; \c{runtime} (đường dẫn từng trình biên dịch, do \c{dmoj-autoconf} sinh); \c{extra_fs} (mở thêm quyền file cho từng executor); \c{tempdir}; \c{submission_cpu_affinity}; các giới hạn của compiler, generator, validator (mặc định: compiler 10\,s và kích thước file nhị phân 128\,MB, generator 20\,s/512\,MB, test tối đa 256\,MB). \tS
+
+\textbf{Docker.} Khi có \c{DMOJ_IN_DOCKER}, judge nạp \f{/judge-runtime-paths.yml} (do bước build sinh ra), và \textbf{API điều khiển mặc định nghe trên \c{0.0.0.0:15001}} (\f{judgeenv.py:192}); help của tham số ghi ``security is left as an exercise for the reverse proxy''. \tS
+
+\textbf{Trình tự khởi động} (\c{main()}): (1) \c{sanity_check}: không chạy trên Windows, \c{cptbox} phải đã biên dịch, \textbf{không được chạy bằng root}, cảnh báo nếu BPF JIT tắt hoặc thiếu module \c{_checker} native; (2) \c{load_env}; (3) \c{load_executors}: với mỗi executor tìm đường dẫn, \textbf{tự kiểm tra}: biên dịch và chạy một chương trình nhỏ trong sandbox, mong nhận lại đúng \c{echo: Hello, World!}; executor hỏng bị bỏ; (4) \c{load_contrib_modules}; (5) nối \c{bridged}, bắt tay; (6) bật \c{Monitor}, API điều khiển, rồi lặp đọc gói. Danh sách executor còn lại, kèm phiên bản runtime (chạy \c{--version}), là trường \c{executors} trong \c{handshake}; site dựa vào đó để hiện ngôn ngữ được nhận. \tS
+
+\subsection{Một bài nộp bên trong judge}
+\begin{enumerate}
+\item Luồng mạng nhận \c{submission-request}, \textbf{gửi \c{submission-acknowledged} trước} rồi gọi \c{begin_grading}.
+\item Luồng chấm tạo \c{JudgeWorker} ($=$ \c{fork}), đợi \c{HELLO}.
+\item Trong worker, \c{_grade_cases()}: dựng \c{Problem(problem_id, time_limit, memory_limit, meta)}, đọc \c{init.yml}. Nếu thiếu file hoặc không có test, \c{InvalidInitException} dẫn tới \c{internal-error}.
+\item Chọn \c{grader_class} theo khoá trong \c{init.yml} (mục \ref{sec:graders}); dựng grader, \textbf{biên dịch bài nộp trong sandbox của compiler}. Lỗi $\to$ \c{COMPILE-ERROR}. Có cảnh báo $\to$ \c{COMPILE-MESSAGE}.
+\item Gửi \c{GRADING-BEGIN} (kèm \c{run_pretests_only}).
+\item Duyệt các test, \emph{phẳng hoá} batch. Với mỗi test: nếu đang ``short-circuit'' thì đặt \c{SC}; nếu không thì chấm (hoặc \textbf{dùng lại kết quả} nếu cặp (\c{in}, \c{out}) đã chấm với điểm khác 0; điểm được co giãn theo $\text{case.points}\cdot \text{result.points}/\text{old.points}$).
+\item Quy tắc \textbf{short-circuit} (\f{judge.py:500--551}): case \c{WA} \emph{trong batch} $\to$ bỏ qua phần còn lại của batch; case 0 điểm mà \c{WA} $\to$ bỏ qua \emph{mọi} case sau; nếu cờ \c{short-circuit} do site gửi là \c{true} (lấy từ \c{Problem.short_circuit}) thì \emph{bất kỳ} \c{WA} nào cũng bỏ qua mọi case sau. Batch có \c{dependencies} bị bỏ qua nếu các batch nó phụ thuộc chưa qua hết.
+\item Mỗi \c{Result} qua IPC $\to$ luồng chấm $\to$ \c{test_case_status_packet} vào hàng đợi; luồng gom gửi gộp mỗi 0,25 giây (và ngay khi \c{batch-*}, \c{grading-end}, \c{internal-error}).
+\item Cuối cùng \c{GRADING-END}; luồng chấm nhả khoá, judge sẵn sàng nhận bài kế tiếp.
+\end{enumerate}
+Nếu có yêu cầu huỷ (\c{terminate-submission}) trong lúc chấm, worker nhận \c{REQUEST-ABORT}, giết tiến trình đang chạy, gửi \c{GRADING-ABORTED}; kết quả đang dở bị bỏ. \tS
+
+\subsection{Định dạng bài (\texorpdfstring{\c{init.yml}}{init.yml})}
+Site \emph{sinh} \c{init.yml} (mục \ref{sec:storage}); judge \emph{đọc} nó. Các khoá cấp bài và mặc định (\f{problem.py:ProblemConfig}):
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.8cm}L{3.0cm}Y@{}}
+\toprule
+Khoá & Mặc định & Ý nghĩa \\
+\midrule
+\c{archive} & --- & File zip chứa test, đường dẫn tương đối với thư mục bài. \\
+\c{test_cases} & đoán theo tên file & Danh sách test, hoặc mô tả mẫu (\c{input_format}, \c{output_format}, \c{case_points}). Mỗi test: \c{in}, \c{out}, \c{points}, hoặc \c{batched} (kèm \c{dependencies}); có thể ghi đè \c{checker}, \c{output_limit_length}, \c{generator_args}. \\
+\c{pretest_test_cases} & --- & Chạy trước; điểm ép về 0 để thành ``rào''. \\
+\c{checker} & \c{standard} & Tên checker hoặc \c{{name, args}}. Tên có dấu chấm được hiểu là \emph{file Python} trong thư mục bài (xem cảnh báo ở mục \ref{sec:judgesec}). \\
+\c{generator}, \c{generator_in} & --- & Chương trình sinh input/đáp án khi chấm. \\
+\c{interactive}, \c{communication}, \c{signature_grader}, \c{output_only}, \c{custom_judge} & --- & Chọn grader. \\
+\c{file_io} & --- & Đọc/ghi qua file (\c{input}, \c{output}). \\
+\c{wall_time_factor} & 3 & Giới hạn thời gian thực = hệ số $\times$ giới hạn CPU. \\
+\c{output_limit_length} & 25\,165\,824 (24\,MiB) & Vượt $\to$ \c{OLE}. \\
+\c{output_prefix_length} & 128 (0 nếu signature) & Số byte đầu của output gửi lên site. \\
+\c{points}, \c{binary_data}, \c{hints}, \c{unbuffered} & 1, \c{false}, \ldots & Điểm mặc định mỗi case; dữ liệu nhị phân; gợi ý cho executor (\c{unicode}, \c{nobigmath}); stdout không đệm. \\
+\c{short_circuit} & \c{true} & \textbf{Không có tác dụng}: khoá được khai báo mặc định ở \f{problem.py:331} nhưng không nơi nào đọc; judge dùng cờ \c{short-circuit} trong gói từ site. \tS \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Tên file test mặc định khớp biểu thức chính quy có nhóm \c{batch} và \c{case} (\f{DEFAULT_TEST_CASE_INPUT_PATTERN}), nên \c{1.in}/\c{1.out} hay \c{2-3.in} (batch 2, case 3) đều được nhận. Dữ liệu được \textbf{chuẩn hoá xuống dòng} (\c{\r\n}, \c{\r} $\to$ \c{\n}) và thêm \c{\n} cuối nếu thiếu, trừ khi \c{binary_data}. \tS
+
+\subsection{Grader: cách chấm một test}\label{sec:graders}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.7cm}L{3.0cm}Y@{}}
+\toprule
+Grader & Chọn khi & Cách hoạt động \\
+\midrule
+\c{StandardGrader} & mặc định & Chạy chương trình trong sandbox với input vào stdin (hoặc file); thu stdout/stderr; \c{populate_result} đặt cờ \c{IR/RTE/OLE/TLE/MLE}; nếu chưa cờ nào thì chạy checker. \\
+\f{BridgedInteractiveGrader} & có \c{interactive} & Biên dịch một \emph{interactor} (kiểu \c{testlib}), nối stdin/stdout hai chiều với chương trình thí sinh; mã thoát của interactor quyết định kết quả. Site chỉ sinh interactor \c{.cpp}, \c{lang: CPP20}. \\
+\c{CommunicationGrader} & có \c{communication} & Một chương trình quản lý (\c{manager}) và \c{num_processes} tiến trình thí sinh (bản sao của cùng nhị phân) nói chuyện qua FIFO (named pipe), kiểu bài ``communication'' của IOI. Site không sinh cấu hình này. \\
+\c{SignatureGrader} & có \c{signature_grader} & Ghép mã thí sinh vào một file entry và header của đề (kiểu IOI function-signature); đổi \c{main} của thí sinh thành tên ngẫu nhiên trừ khi \c{allow_main}. Hỗ trợ C/C++ và Java. \\
+\c{OutputOnlyGrader} & có \c{output_only} & Thí sinh nộp file zip chứa đáp án; judge tải zip về (\c{download_source_code}) và so từng file. Ngôn ngữ \c{OUTPUT}. \\
+\c{CustomGrader} & có \c{custom_judge} & Nạp một module Python từ thư mục bài và uỷ quyền cho lớp \c{Grader} trong đó. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Site hiện chỉ cho chọn bốn grader: \c{standard}, \c{interactive}, \c{signature}, \c{output_only} (\c{GRADERS} trong \f{models/problem_data.py}). \tS
+
+\subsection{Checker và các quy ước mã thoát}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.1cm}Y@{}}
+\toprule
+Checker & Quy tắc \\
+\midrule
+\c{standard} (mặc định) & So theo \emph{từ} (token), bỏ qua khác biệt khoảng trắng; cài đặt bằng C (\c{_checker.c}) để nhanh, có dự phòng bằng Python. \\
+\c{identical} & So \emph{từng byte}; nếu \c{standard} lẽ ra qua thì báo ``Presentation Error''. \\
+\c{rstripped} & So từng dòng, bỏ khoảng trắng cuối dòng. \\
+\c{linecount}, \c{linematches} & So từng dòng, kèm phản hồi theo dòng; \c{linematches} chia điểm theo dòng (\c{point_distribution}). \\
+\c{sorted}, \c{unordered} & Sắp xếp rồi so (theo dòng hoặc theo từ); \c{unordered} đã lỗi thời. \\
+\c{floats}, \c{floatsabs}, \c{floatsrel} & So số thực với sai số tuyệt đối/tương đối (\c{abs}, \c{rel}). \\
+\c{easy} & So đa tập ký tự không phải khoảng trắng, không phân biệt hoa thường. \\
+\c{bridged} & \textbf{Checker tuỳ chỉnh}: biên dịch một chương trình (C++/Pascal/Java; mặc định \c{CPP17}), chạy nó trong sandbox với \c{input_file output_file answer_file}, rồi đọc mã thoát theo quy ước \c{contrib}. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Site cho chọn: \c{standard}, \c{bridged}, \c{floats}, \c{floatsabs}, \c{floatsrel}, \c{identical}, \c{linecount} (\f{models/problem_data.py:CHECKERS}). \tS
+
+\textbf{Quy ước mã thoát} (\f{dmoj/contrib/}). Cùng một chương trình checker có thể theo các chuẩn khác nhau, \c{init.yml} chọn qua \c{type}: \c{default} (0 = AC, 1 = WA), \c{testlib} (0 = AC, 1 = WA, 2 = PE, 3 = lỗi nội bộ, 7 = điểm một phần, đọc \c{points X} từ stderr; có chế độ coi điểm là \%), \c{cms}, \c{coci}, \c{peg}, \c{themis} (đưa thư mục test/output qua stdin). Site luôn sinh \c{type: testlib} cho interactor và có thể kèm tham số cho checker. \tS
+
+\textbf{Bộ tiền xử lý compile cho checker/generator.} \c{compile_with_auxiliary_files} (\f{utils/helper_files.py}) biên dịch các file helper \emph{trong sandbox của compiler}; thư viện \c{testlib.h} được tải sẵn khi build image (\f{.docker/download_testlib_and_precompile}). \tS
+
+\subsection{Executor: một lớp cho mỗi ngôn ngữ}
+Executor trả lời bốn câu hỏi cho ngôn ngữ của nó: \emph{biên dịch thế nào}, \emph{chạy thế nào}, \emph{được đọc/ghi file nào}, \emph{được dùng syscall nào}. Cây lớp (\f{dmoj/executors/}):
+\begin{itemize}
+\item \c{BaseExecutor}: giới hạn mặc định, \c{BASE_FILESYSTEM} (cho đọc \c{/usr}, \c{/lib*}, \c{/opt}, một số file \c{/proc} và \c{/etc}; chỉ ghi \c{/dev/null}), phương thức \c{launch()} tạo \c{TracedPopen}, tự kiểm tra, dò phiên bản. \c{personality = ADDR_NO_RANDOMIZE}. \tS
+\item \c{CompiledExecutor}: biên dịch trong một sandbox \emph{rộng hơn} (\mbox{\c{CompilerIsolateTracer}}: cho \c{fork}, \c{execve}, ghi trong thư mục tạm), có timeout (10\,s), giới hạn kích thước file nhị phân, giới hạn lượng output của compiler, và \textbf{giả pty 80$\times$1024} để compiler in màu. Có bộ nhớ đệm nhị phân tuỳ chọn. \c{CPP*}, \c{C*}, \c{RUST}, \c{GO}, \c{PAS}, \c{HASK}, \ldots{} kế thừa nó. \tS
+\item \c{ScriptExecutor}: ngôn ngữ thông dịch không biên dịch (Perl, Ruby, Lua, \ldots). \c{PythonExecutor} biên dịch bằng \c{compileall} rồi chạy \c{python -BS} qua một script nạp.
+\item \c{JavaExecutor}: dùng \c{java_sandbox.jar}, một lớp bảo vệ phía JVM. \c{MonoExecutor}: C\#, F\#, VB. \c{ASMExecutor}: assembly. \c{ShellExecutor}.
+\end{itemize}
+\textbf{Cờ biên dịch C/C++} (\f{c_like_executor.py}): \c{-O2 -lm}, \c{-std=...}, \c{-DONLINE_JUDGE}, giới hạn số lỗi (\c{-fmax-errors}/\c{-ferror-limit}), và \c{-march=native} (mặc định; đổi được qua khoá \c{runtime}), nên nhị phân phụ thuộc CPU của máy chấm. Hai executor ``đặc biệt'': \c{BASH} và \c{COFFEE} bị tắt cứng (\c{_unsupported_executors}). \tS
+
+\subsection{Sandbox \texorpdfstring{\c{cptbox}}{cptbox}}\label{sec:cptbox}
+Sandbox là phần \emph{bắt buộc} của một judge: nó biến việc ``chạy mã lạ'' thành an toàn và đo được. \c{cptbox} không dùng container hay namespace; nó dùng \textbf{seccomp-BPF kết hợp ptrace} trên chính tiến trình thí sinh.
+
+\begin{center}\begin{minipage}{\textwidth}\centering
+\begin{tikzpicture}[
+  lay/.style={draw,rounded corners=2pt,align=left,font=\footnotesize,line width=0.5pt,inner sep=4pt,text width=11.3cm},
+  tag/.style={font=\footnotesize\bfseries,anchor=east}
+]
+\node[lay,fill=ext]  (l0) at (0,0)    {\textbf{0. Hệ điều hành} --- judge chạy \emph{không} bằng root; Linux $\ge 4.8$; Yama \c{ptrace_scope} $\le 1$; trong Docker cần \c{--cap-add=SYS_PTRACE}.};
+\node[lay,fill=web]  (l1) at (0,-1.15) {\textbf{1. Nhóm tiến trình} --- \c{setpgid}; \c{PTRACE_O_EXITKILL}; vi phạm $\to$ \c{killpg(SIGKILL)}; tiến trình con không được sống lâu hơn cha; \c{oom_score_adj} cao nhất (bị OOM-killer chọn trước judge).};
+\node[lay,fill=dat]  (l2) at (0,-2.3) {\textbf{2. Giới hạn tài nguyên (\c{setrlimit})} --- \c{RLIMIT_CPU}, \c{RLIMIT_AS}, \c{RLIMIT_DATA}, \c{RLIMIT_NPROC}, \c{RLIMIT_FSIZE}, \c{RLIMIT_CORE=0}; stack không giới hạn.};
+\node[lay,fill=asy]  (l3) at (0,-3.45) {\textbf{3. seccomp-BPF} --- mặc định \c{SCMP_ACT_TRACE}; syscall an toàn $\to$ \c{ALLOW} (không tốn ptrace); một số $\to$ \c{ERRNO} (ví dụ \c{socket} trả \c{EACCES}); còn lại chuyển cho tracer.};
+\node[lay,fill=jud]  (l4) at (0,-4.6) {\textbf{4. Tracer (ptrace) bằng Python} --- kiểm tra đường dẫn của \c{open}, \c{stat}, \c{readlink}, \ldots{} theo bảng cho phép; \c{kill} chỉ nhắm chính mình; \c{prctl} theo danh sách trắng; không khớp $\to$ giết.};
+\node[lay,fill=jud!50] (l5) at (0,-5.75) {\textbf{5. Đồng hồ} --- luồng ``shocker'' mỗi giây kiểm tra thời gian chạy và thời gian thực (mặc định $3\times$ giới hạn); \c{SIGXCPU} $\to$ \c{TLE}; đo bộ nhớ bằng \c{rusage}.};
+\end{tikzpicture}
+\par\vspace{3pt}\small\raggedright\textbf{Hình 7.} Các lớp bảo vệ khi chạy một chương trình thí sinh (\f{ptproc.cpp}, \f{helper.cpp}, \f{isolate.py}, \f{tracer.py}). \end{minipage}\end{center}
+
+\textbf{Vòng đời của một lần chạy} (\f{ptproc.cpp:monitor}): (1) tiến trình con \c{fork}, đặt nhóm, gọi \c{PR_SET_NO_NEW_PRIVS}, nạp bộ lọc seccomp, đặt rlimit, rồi \c{execve}; (2) trước \c{execve} đầu tiên \emph{mọi syscall được phép} để có thể in lỗi nếu khởi tạo hỏng; sau đó sandbox mới có hiệu lực; (3) tracer \c{wait4} cả nhóm, xử lý từng sự kiện seccomp: syscall có \c{handler = ALLOW} cho qua, \c{CALLBACK} gọi hàm Python kiểm tra, mặc định (\c{DISALLOW}) là \textbf{giết cả nhóm} (``safety first''); (4) kết thúc: giết mọi tiến trình con còn sót, trả mã thoát. \tS
+
+\textbf{Chính sách file.} \c{IsolateTracer} duy trì hai ``nhà tù'' là cây tiền tố (\c{FilesystemPolicy}): đọc và ghi. Mỗi luật là \c{ExactFile}, \c{ExactDir} (chỉ liệt kê), \c{RecursiveDir}. Mỗi lần mở file, tracer đọc đường dẫn từ bộ nhớ tiến trình, chuẩn hoá và dùng \c{realpath}, so \c{samefile} để bắt symlink, rồi kiểm tra \emph{cả đường dẫn gốc và đích}. Mở để ghi (\c{O_WRONLY}, \c{O_RDWR}, \c{O_CREAT}, \c{O_TRUNC}, \c{O_EXCL}, \c{O_TMPFILE}) chỉ được vào nhà tù ghi, mặc định chỉ có \c{/dev/null} (và thư mục tạm của bài khi compiler). \tS
+
+\textbf{Mạng.} Trong sandbox \emph{chạy bài}, \c{socket} và \c{socketcall} trả \c{EACCES}. Nhưng trong sandbox \emph{biên dịch}, các syscall mạng (\c{socket}, \c{connect}, \c{sendto}, \c{recvfrom}, \ldots) được \c{ALLOW} kèm comment ``we don't sandbox these'' (\f{compiler_isolate.py}). Xem mục \ref{sec:judgesec}. \tS
+
+\textbf{Thời gian và bộ nhớ.} \c{TracedPopen} đặt: \c{RLIMIT_CPU} $=$ time\_limit $+ 5$ giây (chốt chặn cứng); giới hạn thời gian thực $=3\times$ time\_limit (\c{wall_time_factor}); \c{RLIMIT_AS} $=$ bộ nhớ $+$ \c{address_grace} (mặc định 64\,MiB; Python 128\,MiB), \c{RLIMIT_DATA} $=$ bộ nhớ $+$ \c{data_grace} (mặc định 0; Python 2\,MiB). \c{MLE} được xác định khi bộ nhớ tối đa (\c{ru_maxrss}) vượt giới hạn; \c{TLE} khi thời gian chạy vượt hoặc shocker kích hoạt; \c{OLE} khi vượt \c{output_limit_length}; \c{IR} khi mã thoát $>0$; \c{RTE} khi bị tín hiệu giết. \tS
+
+\textbf{Phương án nền tảng.} Có mã riêng cho x86, x64, x32, ARM, ARM64 và FreeBSD x64 (\c{ptdebug_*.cpp}). Nhánh chưa merge \c{hiep/landlock} thay phần kiểm tra file bằng Landlock để giảm số lần trap ptrace; \c{hiep/ptraceless} thử sandbox không ptrace. Đây là hướng phát triển, chưa phải kiến trúc hiện hành. \tS
+
+\subsection{Đóng gói: các ``tier'' image}\label{sec:docker}
+\f{.docker/Makefile} build năm image từ các image \c{runtimes}: \c{judge-tier1}, \c{tier2}, \c{tier3}, \c{tiericpc}, \c{tiervnoj}. Chúng chỉ khác \emph{bộ runtime có sẵn}; \c{judge-tiervnoj} cài thêm OpenJDK 25, Go, Kotlin, Rust (qua \c{rustup}, có \c{cargo fetch} sẵn), PyPy2, scratch-run, \c{unzip}, \c{jq}. Mọi image: tải mã judge theo \c{TAG} (mặc định \c{master}) từ GitHub, tạo \c{venv}, \c{pip install -e .}, chạy \c{dmoj-autoconf -V} sinh \f{/judge-runtime-paths.yml}, biên dịch trước \c{testlib}. \c{ENTRYPOINT} là \c{tini} + script \c{entry}, có ba lệnh: \c{run} ($\to$ \c{dmoj}), \c{cli} ($\to$ \c{dmoj-cli}), \c{test} (bộ \c{testsuite}), và chạy bằng \c{setpriv} xuống người dùng \c{judge}. \tS
+
+\textbf{Lưu ý}: Dockerfile lấy ảnh bằng nhiều lệnh \c{curl} tới GitHub API/PyPy/Kotlin lúc \emph{build}, nên build phụ thuộc mạng và bị giới hạn tốc độ GitHub API (60 yêu cầu/giờ/IP khi không đăng nhập) --- đã gặp khi tôi dựng \c{tiervnoj}; ngoài ra URL PyPy2 giờ trả \c{.tar.gz} thay vì \c{.tar.bz2} nên dòng \c{tar xj} hỏng. \tS
+
+\subsection{Điều khiển và quan sát}
+\begin{itemize}
+\item \textbf{API điều khiển} (\f{control.py}, bật bằng \c{--api-port}): \c{POST /update/problems} bắt judge quét lại thư mục bài; \c{GET /metrics} xuất Prometheus: \c{dmoj_judge_up}, \c{dmoj_judge_problems}, \c{dmoj_judge_grading}, \c{dmoj_judge_submission_graded_total}, \c{dmoj_judge_case_verdicts_total} (nhãn \c{verdict}). \textbf{Không có xác thực.} \tS
+\item \textbf{\c{dmoj-cli}}: shell chấm cục bộ qua \c{LocalPacketManager} (mọi gói gửi site bị bỏ qua); lệnh \c{submit}, \c{rejudge}, \c{resubmit}, \c{test}, \c{validate}, \c{diff}, \c{problems}, \c{show}, \c{submissions}. Đây là cách thử một bài hoặc một executor mà không cần dựng site. \tS
+\item \textbf{Log có cấu trúc phía site}: \c{judge.json.bridge} ghi mỗi sự kiện (kết nối, ack, từng test case, grading-end) thành một dòng JSON, nhưng \textbf{chỉ có tác dụng nếu \c{LOGGING} được cấu hình} (mặc định \c{settings.py} không đặt). \tS \tI
+\end{itemize}

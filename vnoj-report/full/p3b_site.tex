@@ -1,0 +1,140 @@
+
+\subsubsection{Tính điểm và kết luận khi \texorpdfstring{\c{grading-end}}{grading-end}}\label{sec:scoring}
+\textbf{Judge không tính điểm bài nộp; \c{bridged} tính.} Judge chỉ gửi điểm từng test case. Khi nhận \c{grading-end}, \c{on_grading_end} (\f{judge_handler.py:372--453}) đọc lại mọi \c{SubmissionTestCase} của bài và: \tS
+\begin{itemize}
+\item \textbf{Thời gian} của bài là max thời gian các case; \textbf{bộ nhớ} là max bộ nhớ; tổng thời gian cộng dồn dùng để trừ \emph{credit} tổ chức.
+\item \textbf{Điểm.} Case không thuộc batch: cộng \c{points} và \c{total}. Một batch: lấy \textbf{min} điểm và \textbf{max} tổng điểm của các case trong batch, rồi cộng vào. Làm tròn 3 chữ số.
+\item \textbf{Điểm bài} $=\mathrm{round}\!\left(\dfrac{\text{points}}{\text{total}}\cdot P,\,3\right)$ với $P=$ \c{problem.points}; nếu $\text{total}=0$ thì 0. Nếu bài \emph{không} cho điểm từng phần (\c{partial=False}) và điểm khác $P$ thì về 0.
+\item \textbf{Kết luận} là case ``tệ nhất'' theo thứ tự \c{SC} $<$ \c{AC} $<$ \c{PAC} $<$ \c{WA} $<$ \c{MLE} $<$ \c{TLE} $<$ \c{IR} $<$ \c{RTE} $<$ \c{OLE}.
+\end{itemize}
+Sau khi lưu \c{status='D'}: nếu bài \c{is_public} và không riêng tư tổ chức thì \c{user.calculate_points()}; luôn gọi \c{problem.update_stats()}, \c{submission.update_contest()} (tính lại điểm trong kỳ thi và \c{recompute_results}), \c{update_credit(total_time)}, \c{finished_submission} (xoá cache); cuối cùng đăng sự kiện. \tS
+
+\subsubsection{Hành vi khi có sự cố}
+Các hành vi này đọc từ code, chưa gây lỗi thật để quan sát:
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{4.3cm}Y@{}}
+\toprule
+Sự cố & Kết quả theo code \\
+\midrule
+\c{bridged} khởi động lại & Mọi bài \c{QU/P/G} thành \c{IE}; mọi judge offline cho tới khi nối lại. \tS \\
+Judge ngắt giữa lúc chấm & \c{on_disconnect}: bài đang chấm thành \c{IE}. Judge tự thoát tiến trình (\c{os._exit(1)}) khi mất kết nối giữa chừng và dựa vào Docker/systemd để khởi động lại (comment trong \f{dmoj/packet.py:166}). \tS \\
+Judge im lặng 60 giây & Socket timeout $\to$ \c{handle()} kết thúc $\to$ \c{on_disconnect}. Ping mỗi 10 giây nên judge sống sẽ không bị ngắt. \tS \\
+Không còn judge nào hợp lệ & Bài ở lại hàng đợi trong RAM đến khi có judge phù hợp nối vào. \tS \\
+Judge báo \c{internal-error} & Bài thành \c{IE}, judge được giải phóng ngay. \tS \\
+Django không nối được \c{bridged} & \c{judge_request} ném ngoại lệ, bài thành \c{IE} (\f{judgeapi.py:105--108}). \tS \\
+Mất MySQL & \c{JudgeHandler} gọi \c{close_if_unusable_or_obsolete} đầu mỗi lần lấy dữ liệu bài và \c{db.connection.close()} khi kết thúc luồng; có xử lý riêng lỗi MySQL 2006 trong \c{_update_ping}. Không có retry cho các lần ghi kết quả. \tI \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Hệ thống sự kiện thời gian thực}\label{sec:events}
+Mục đích: đẩy cập nhật trạng thái bài nộp, bảng xếp hạng kỳ thi, ticket, thông báo tới trình duyệt mà không cần tải lại trang. Có ba mảnh:
+\begin{enumerate}
+\item \textbf{Phía đăng} (\f{judge/event_poster.py}). Có ba chế độ: tắt (\c{EVENT_DAEMON_USE=False}, mặc định; \c{post()} trả 0 ngay), AMQP (nếu có \c{EVENT_DAEMON_AMQP}, dùng \c{pika}), hoặc WebSocket tới \c{EVENT_DAEMON_POST}. Lỗi mạng bị nuốt (trả 0) nên sự kiện \textbf{không bao giờ làm hỏng việc chấm}. \tS
+\item \textbf{Daemon \c{wsevent}} (\f{websocket/daemon.js}, Node.js với thư viện \c{ws}). Hai server WebSocket: một cho phía đăng (lệnh \c{post}, \c{last-msg}), một cho trình duyệt (lệnh \c{start-msg}, \c{set-filter}); thêm một HTTP long-poll ở \c{/channels/a|b?last=ID} (hết hạn 60 giây, trả 504). Tin nhắn nằm trong một hàng đợi \textbf{RAM}, mặc định 50 tin; id tin nhắn là \c{Date.now()} tăng dần. Mỗi trình duyệt lọc tối đa 5 kênh. Không lưu trữ bền vững. \tS
+\item \textbf{Phía trình duyệt} (\f{resources/event.js}, lớp \c{WSEventDispatcher}). Thử WebSocket, nếu trình duyệt không hỗ trợ thì long-poll; tự nối lại sau 1 giây. Các trang dùng nó: trạng thái bài nộp, danh sách bài nộp, bảng xếp hạng kỳ thi, ticket, thông báo (\f{templates/submission/status.html}, \f{list.html}, \f{base.html}, \f{ticket/*.html}). \tS
+\end{enumerate}
+\textbf{Kênh và bảo mật.} Kênh công khai: \c{submissions}, \c{tickets}. Kênh theo tài nguyên: \c{contest_<secret>}, \c{ticket-<id>}, \c{notification_<secret>}, và \c{sub_<secret>} cho từng bài nộp. \c{<secret>} của bài nộp là \c{HMAC-SHA512(EVENT_DAEMON_SUBMISSION_KEY, id)} cắt 16 ký tự hex ghép với id dạng hex (\f{models/submission.py:get_id_secret}). Tức là \textbf{bảo mật dựa vào việc kênh không đoán được}, và daemon không kiểm tra quyền. Khoá mặc định trong \c{settings.py} là chuỗi cố định công khai trong repo, nên \textbf{bắt buộc đổi} ở môi trường thật. \tS
+
+\finding{cI}{Phát hiện: \c{EVENT_DAEMON_KEY} và \c{daemon.js} không khớp \tI}{Phía đăng (\f{event_poster_ws.py:22--26}) gửi lệnh \c{auth} nếu \c{EVENT_DAEMON_KEY} khác \c{None}, và ném \c{EventPostingError} nếu daemon trả \c{error}. \f{daemon.js} chỉ có lệnh \c{post} và \c{last-msg} (tìm \c{auth} trong \f{websocket/} không ra kết quả). Suy ra: đặt \c{EVENT_DAEMON_KEY} với daemon trong repo làm mọi lần \c{post} ném lỗi (\c{EventPostingError} là \c{RuntimeError} nên không bị khối \c{except} của \c{post()} bắt). Cần chạy thử để chắc. Khuyến nghị: để \c{EVENT_DAEMON_KEY = None} và chỉ cho phép nối từ localhost/mạng nội bộ.}
+
+Nếu bỏ hẳn hệ thống này (\c{EVENT_DAEMON_USE=False}), trang vẫn hiện đúng trạng thái \emph{tại lúc tải}; người dùng phải tải lại để thấy tiến triển. Không mất dữ liệu nào. \tI
+
+\subsection{Celery}\label{sec:celery}
+Celery ở đây là \textbf{hệ thống việc nền cho tác vụ lâu hoặc định kỳ}, không nằm trên đường chấm một bài nộp thường. Cấu hình ở \f{dmoj/celery.py}; broker và result backend do \c{local_settings.py} cấp (\c{CELERY_BROKER_URL}, hoặc biến \c{*_SECRET}).
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{4.2cm}L{4.1cm}Y@{}}
+\toprule
+Tác vụ & Ai gọi & Ghi chú \\
+\midrule
+\c{rejudge_problem_filter} & Admin quản lý bài (\f{views/problem_manage.py:95}) & Chấm lại hàng loạt; mỗi bài gọi \c{submission.judge(rejudge=True, batch_rejudge=True)}, tức là \textbf{đi vào \c{bridged} với mức 3}. Đây là chỗ duy nhất Celery chạm vào đường chấm. \tS \\
+\c{rescore_problem} & Admin bài/kỳ thi & Tính lại điểm từ \c{case_points/case_total}, không cần judge. \\
+\c{run_moss} & Admin kỳ thi & Gửi mã AC của kỳ thi tới MOSS (\c{pymoss}). \\
+\c{prepare_contest_data}, \c{prepare_user_data} & Người dùng/ban tổ chức & Xuất dữ liệu (kèm trang tiến độ qua \c{AsyncResult}). \\
+\c{send_contest_announcement} & Mô hình \c{ContestAnnouncement} & Gửi thông báo kỳ thi. \\
+\f{restore_organization_archived_problems} & Trang tổ chức & Khôi phục bài từ kho lạnh. \\
+\c{on_new_*} & Tín hiệu và view: comment, ticket, bài của tổ chức, kỳ thi & Webhook Discord. \c{on_new_blogpost} có định nghĩa nhưng tôi không thấy nơi gọi. \tS \\
+\c{on_long_queue} & \textbf{\c{bridged}} (\f{judge_list.py:241}) & Cảnh báo hàng đợi dài, gộp 5 phút bằng \c{cache.add}. \\
+\midrule
+\multicolumn{3}{@{}l}{\textbf{Lịch của beat} (\c{app.conf.beat_schedule})} \\
+\c{queue_time_stats} & mỗi ngày 00:00 UTC & Biểu đồ thời gian chờ chấm gửi Discord. \\
+\c{problem_garbage_collect} & mặc định 00:00 mỗi ngày & Xoá thật các bài đã xoá mềm quá \c{VNOJ_PROBLEM_DELETION_GRACE_PERIOD} (7 ngày), tối đa 1 giờ/lần. \\
+\c{update_hot_problems} & mỗi 10 phút & Làm mới danh sách bài ``hot'' (7 bài, 1 ngày). \\
+\c{organization_monthly_reset} & ngày 1 hàng tháng & Chốt và đặt lại credit tổ chức. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Hai điểm cần biết khi vận hành:
+\begin{itemize}
+\item \textbf{Broker không hoàn toàn tuỳ chọn.} Nhiều view và tín hiệu gọi \c{.delay()} \emph{đồng bộ trong request}: tạo comment (\f{signals.py:122}), tạo ticket, kỳ thi mới, thông báo kỳ thi, bài mới của tổ chức. Chỉ \emph{worker} là tuỳ chọn; thiếu \emph{broker} thì các thao tác này có thể lỗi hoặc chậm theo cách kombu xử lý broker không với tới được. \tI
+\item \textbf{Cần cả beat.} Worker không tự chạy lịch; thiếu \c{celery beat} thì bốn việc định kỳ ở trên không bao giờ chạy. \tS
+\end{itemize}
+
+\subsection{Kho test data và đường đi của bài tập}\label{sec:storage}
+\textbf{Phía site.} \c{StorageManager} (\f{judge/utils/problem_data_storage.py}) nạp cấu hình từ file YAML \c{DMOJ_STORAGE_CONFIG_PATH}: một khoá \c{default}, bảng \c{storages} (mỗi kho có \c{backend: filesystem} với \c{location}, hoặc \c{backend: s3} với tham số \c{django-storages}), và \c{metadata_dir} tuỳ chọn. Nếu không có file thì dùng cấu hình cũ \c{DMOJ_PROBLEM_DATA_ROOT} như một kho \c{local}; không có cả hai thì site không khởi động được. Mỗi bài có trường \c{Problem.storage} chọn kho. \c{ProblemDataStorage} là một \c{Storage} của Django định tuyến theo mã bài. \tS
+
+\textbf{Từ upload tới \c{init.yml}.} Người ra đề tải một file zip và cấu hình từng test (\c{ProblemTestCase}). \c{ProblemDataCompiler.make_init()} (\f{judge/utils/problem_data.py}) biến chúng thành một dict rồi \c{yaml.safe_dump} ra \c{<code>/init.yml} trong kho: \c{archive:} là tên file zip, \c{test_cases:} (có batch, \c{dependencies}), \c{pretest_test_cases:}, \c{checker:}, \c{interactive:}/\c{signature_grader:}/\c{output_only:}, \c{file_io:}, \c{hints:}. Lỗi cấu hình ghi vào \c{ProblemData.feedback} và xoá \c{init.yml}. Nếu không có test nào được khai báo thì \textbf{xoá} \c{init.yml} để judge tự đoán tên file test. \tS
+
+\textbf{Metadata.} Danh sách file trong zip và bản xem trước các test lưu ở \c{<metadata_dir>/<code>_metadata.json}, ghi qua file tạm rồi \c{os.replace}; xoá mỗi lần biên dịch lại. \tS
+
+\textbf{Phía judge.} Judge đọc test trực tiếp từ đường dẫn cục bộ. Cấu hình \c{problem_storage_globs} liệt kê các thư mục gốc; với \c{judge_version: 2} mỗi mục là cặp \c{id} + \c{glob}, và \textbf{danh sách \c{id} được gửi trong \c{handshake}} (\f{judgeenv.py:218--231}, \f{packet.py:97}). Site chỉ dùng \c{id} để biết judge nào \emph{có} kho nào (\c{can_judge}); judge \textbf{không dùng \c{id}} để tìm bài mà duyệt mọi gốc tìm \c{<gốc>/<mã bài>/init.yml} (\f{judgeenv.py:get_problem_root}). Với phiên bản 2, judge \textbf{không quét thư mục, không bật watchdog, không gửi danh sách bài} (\c{no_watchdog = True}, \c{get_supported_problems_and_mtimes} trả rỗng). \tS
+
+Mỗi bài nộp, worker dựng lại \c{Problem} từ đầu: đọc \c{init.yml}, mở file zip. Nên test mới có hiệu lực ngay ở bài nộp kế tiếp, miễn file đã thấy được trên máy chấm. \tS
+
+\finding{cS}{Phát hiện: site không đẩy test data cho judge}{Không có đoạn mã nào trong \c{OJ} hay \c{judge-server} master chép test từ site sang judge. Site ghi vào kho của nó; judge đọc một đường dẫn cục bộ. Hai bên phải thấy \textbf{cùng dữ liệu} bằng một cơ chế \emph{ngoài mã nguồn}: thư mục dùng chung (NFS, bind-mount cùng đĩa), rsync, hoặc kho object mount lên thư mục. Với kho S3 phía site, judge master không có mã S3 (xem mục 1), nên phải mount/đồng bộ thành thư mục. Cách VNOI đang làm \tQ.}
+
+\textbf{Kho lạnh.} \c{ProblemData} có \c{archived_size}; \f{judge/utils/problem_archive.py} gọi một \emph{dịch vụ lưu trữ bên ngoài} qua HTTP (\c{/archive}, \c{/restore}, \c{/download}, có \c{Authorization: Bearer}). Thời hạn giữ \c{VNOJ_PROBLEM_ARCHIVE_RETENTION} chỉ dùng để \emph{hiển thị}; theo comment trong settings, ``the job owns the real schedule''. \tS
+
+\textbf{Giới hạn của backend S3.} \c{ProblemDataS3Storage._iter_keys} dùng một lần \c{list_objects_v2} và \textbf{ném \c{RuntimeError}} nếu bị cắt trang (\c{IsTruncated}, tức hơn 1\,000 đối tượng dưới một tiền tố). \c{rename_folder} là \emph{sao chép rồi xoá}, không nguyên tử. Bài có hơn 1\,000 file khó đổi mã hoặc xoá trên S3. \tS \tI
+
+\subsection{Balancer (tuỳ chọn)}\label{sec:balancer}
+\f{judge/balancer/} cho phép \textbf{nhiều site (nhiều \c{bridged}) dùng chung một dàn máy chấm}. Judge không nối vào từng site mà nối vào balancer (cổng 8888, \c{BALANCER_JUDGE_ADDRESS}); balancer nối \emph{ra} từng \c{bridged} như một judge thông thường, mỗi mục \c{bridges:} trong file YAML là một ``judge ảo''. \tS
+\begin{center}\begin{minipage}{\textwidth}\centering
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners=2pt,minimum height=0.9cm,align=center,font=\footnotesize,line width=0.5pt},
+  jud/.style={box,fill=jud},web/.style={box,fill=web},bl/.style={box,fill=jud!60,minimum width=3.4cm,minimum height=2.2cm},
+  arr/.style={-{Stealth[length=2mm]},line width=0.5pt},lab/.style={font=\scriptsize,fill=white,inner sep=1pt}
+]
+\node[jud,minimum width=2.4cm] (j1) at (0,1.0) {Judge A};
+\node[jud,minimum width=2.4cm] (j2) at (0,-1.0) {Judge B};
+\node[bl,align=left,font=\scriptsize] (b) at (5.2,0) {\textbf{Balancer}\\\c{deque} FIFO duy nhất\\gán judge rảnh cho\\mỗi (bridge, gói)\\thêm \c{storage-namespace}};
+\node[web,minimum width=2.8cm] (s1) at (10.6,1.0) {\c{bridged} site 1};
+\node[web,minimum width=2.8cm] (s2) at (10.6,-1.0) {\c{bridged} site 2};
+\draw[arr] (j1) -- node[lab]{:8888} (b.west |- j1);
+\draw[arr] (j2) -- (b.west |- j2);
+\draw[arr] (b.east |- s1) -- node[lab,above=1pt]{nối ra (v2)} (s1);
+\draw[arr] (b.east |- s2) -- (s2);
+\end{tikzpicture}
+\par\vspace{3pt}\small\raggedright\textbf{Hình 5.} Balancer đứng giữa judge và nhiều \c{bridged}. \end{minipage}\end{center}
+
+Điều cần biết (\f{balancer.py}, \f{bridge_handler.py}, \f{judge_handler.py}):
+\begin{itemize}
+\item Hàng đợi của balancer là một \c{deque} \textbf{FIFO}, \emph{không} có mức ưu tiên và \emph{không} có tier. Ưu tiên và tier của site chỉ có tác dụng bên trong từng \c{bridged}. \tS
+\item Mỗi \c{bridges:} nhận \textbf{một bài một lúc}, vì site thấy nó là một judge. Muốn nhiều bài song song cho một site thì cần nhiều mục với \c{id} khác nhau (và nhiều bản ghi \c{Judge} trên site). \tI
+\item Đây là \textbf{nơi duy nhất} thêm trường \c{storage-namespace} vào gói gửi cho judge (\c{packet['storage-namespace'] = ...}), khớp với \c{storage_namespaces} trong cấu hình judge. Site VNOJ bản thân \textbf{không} gửi trường này (\f{judge_handler.py:submit}). \tS
+\item \c{BridgeHandler} có \c{judge_version} mặc định \textbf{1}, mà site từ chối phiên bản 1; cấu hình phải đặt \c{judge_version: 2}. \tS
+\item Balancer \textbf{bỏ qua} \c{ping-response} và \c{supported-problems} của judge; \c{executors} gửi cho các site là của \emph{judge bắt tay gần nhất} (ghi đè). \tS
+\item Mất kết nối tới một \c{bridged} thì bài đang chạy cho bridge đó bị huỷ. \tS
+\end{itemize}
+Nếu chỉ có một site thì balancer là thừa. Nó đáng giá khi \textbf{nhiều site muốn chia sẻ máy chấm}; việc này \tQ đang được VNOI dùng hay không.
+
+\subsection{Dịch vụ ngoài}\label{sec:external}
+Tất cả đều có giá trị mặc định ``tắt'' (\c{None}/\c{False}) trong \f{dmoj/settings.py}, nên site chạy được khi thiếu chúng:
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.1cm}L{4.5cm}Y@{}}
+\toprule
+Dịch vụ & Cấu hình & Dùng để \\
+\midrule
+pdfoid & \c{DMOJ_PDF_PDFOID_URL} & Dịch đề bài HTML sang PDF (\c{requests.post}); có thể cache và phục vụ qua \c{X-Accel-Redirect}. \\
+mathoid / texoid & \c{MATHOID_URL}, \c{TEXOID_*} & Dựng công thức toán phía server (tuỳ chọn, mặc định tắt). \\
+camo & \c{DMOJ_CAMO_URL}, \c{_KEY} & Proxy cho ảnh nhúng từ nguồn ngoài (kiểu GitHub Camo). \\
+Dịch vụ lưu trữ bài & \f{VNOJ_PROBLEM_ARCHIVE_SERVICE_URL}, \c{_TOKEN} & Đưa bài sang/về kho lạnh (mục \ref{sec:storage}). \\
+Discord webhook & \c{DISCORD_WEBHOOK} (8 khoá) & Thông báo ticket/comment/bài mới/hàng đợi dài/lỗi; thống kê hàng ngày. \\
+MOSS & \c{MOSS_API_KEY} & Phát hiện đạo code trong kỳ thi. \\
+Mailgun & \c{MAILGUN_ACCESS_KEY} & Nhận webhook thư đến: xác minh chữ ký HMAC, rồi kích hoạt tài khoản nếu thư trả lời chứa khoá kích hoạt (\c{MailgunActivationView}). \\
+reCAPTCHA, HIBP & \c{RECAPTCHA_*}; \c{api.pwnedpasswords.com} & Chống bot; kiểm tra mật khẩu đã bị lộ (\c{PwnedPasswordsValidator} là một trong bốn validator mật khẩu). \\
+Đăng nhập xã hội & Google, Facebook, GitHub & OAuth2. \\
+S3 & \c{django-storages[s3]} & Kho test data (mục \ref{sec:storage}). \\
+\bottomrule
+\end{tabularx}
+\end{center}

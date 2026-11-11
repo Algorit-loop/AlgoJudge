@@ -1,0 +1,52 @@
+\section{Phạm vi, nguồn và cách đọc}
+Tài liệu này mô tả \textbf{kiến trúc} của VNOJ: hệ thống gồm những khối nào, mỗi khối làm gì bên trong, các khối nói chuyện với nhau bằng giao thức gì, thiếu một khối thì chuyện gì xảy ra, và khối nào thay hoặc bỏ được. Nó dựa \textbf{hoàn toàn vào việc đọc source} của hai repo mà VNOI đang phát triển:
+\begin{itemize}
+\item \c{VNOI-Admin/OJ}: site Django (fork của DMOJ \c{online-judge}), kèm daemon \c{bridged}, balancer, daemon WebSocket và các tác vụ Celery.
+\item \c{VNOI-Admin/judge-server}: máy chấm (fork của DMOJ \c{judge-server}), kèm sandbox \c{cptbox}, các executor và checker.
+\end{itemize}
+
+\subsection{Độ mới của source}
+Tôi kiểm tra ngày commit của từng repo trước khi đọc, và chỉ dùng hai repo ở dòng đầu làm căn cứ.
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{3.1cm}L{2.6cm}L{2.6cm}Y@{}}
+\toprule
+Repo / nhánh & Commit mới nhất & Dùng làm căn cứ? & Ghi chú \\
+\midrule
+\c{OJ}, nhánh \c{master} & \c{209a32e}, 04/11/2026 & \textbf{Có} & Đã có nhiều kho lưu trữ (filesystem/S3), judge protocol v2, tier của judge, \c{beat_schedule}, OAuth, API đồng bộ kỳ thi. \\
+\c{judge-server}, nhánh \c{master} & \c{23759617}, 10/10/2026 & \textbf{Có} & Bản clone mới, đặt ở \f{vnoj-src/judge-server-upstream}. \\
+\c{vnoj-docker} & 13/09/2023 & Không & Cũ hơn site ${\sim}$3 năm (không có S3, không có celery beat). \\
+\c{vnoj-docs} & 19/09/2024 & Không & Cũ hơn site ${\sim}$2 năm. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Các nhánh của \c{judge-server} đi trước \c{master}.} Tôi đã mở diff của những nhánh còn hoạt động. Chúng \textbf{chưa merge}, nên không được tính là kiến trúc hiện hành, nhưng cho thấy hướng phát triển:
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{4.1cm}L{2.2cm}Y@{}}
+\toprule
+Nhánh & Commit mới nhất & Nội dung \\
+\midrule
+\c{thuc/ce-msg} & 08/11/2026 & 1 commit: giải thích lỗi biên dịch ``File too large'' (3 file). Không đổi kiến trúc. \\
+\c{hiep/landlock} & 11/10/2026 & 6 commit: thay một phần kiểm tra file bằng Landlock (không còn bắt ptrace cho file), I/O qua \c{memfd}. \\
+\c{feat/microvm-api-judge} & 11/10/2026 & 1 commit: kho test data S3 \textbf{phía judge} và chế độ judge qua HTTP API. \\
+\c{wip/parallel-case-grading} & 10/10/2026 & WIP: chấm các test case của một bài nộp song song. \\
+\c{hiep/ptraceless}, \c{fpt26}, \c{ai}, \ldots & 2025--2026 & Thử nghiệm sandbox không ptrace; thêm PyTorch; nhánh cũ. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Hệ quả quan trọng: trong \c{master}, \textbf{judge không có mã nào tải test data từ S3} (tìm \c{s3}, \c{boto} trong \f{dmoj/} chỉ ra hai kết quả trong file test, không phải mã chạy). Mã S3 phía judge nằm ở nhánh chưa merge \c{feat/microvm-api-judge}.
+
+\textbf{Lưu ý về thư mục cục bộ.} Thư mục \f{/home/worker/AlgoJudge/judge-server} hiện không còn là bản clone của \c{VNOI-Admin/judge-server}: \c{origin} của nó là \c{Algorit-loop/AlgoJudge}, chỉ có 1 commit (``first update'') và không có \f{.docker/tiervnoj}. Tôi \textbf{không dùng} thư mục đó làm căn cứ và không sửa gì trong đó.
+
+\subsection{Cách đọc các nhãn độ chắc chắn}
+Mỗi khẳng định kỹ thuật quan trọng mang một nhãn:
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}L{1.0cm}Y@{}}
+\tS & \textbf{Đã đọc trực tiếp trong source}; có thể mở file và kiểm tra. Tên file đi kèm trong dấu ngoặc hoặc cột ``Căn cứ''. \\
+\tI & \textbf{Suy ra từ code} (ví dụ từ thứ tự lệnh hay luồng điều khiển), \textbf{chưa chạy thử}. \\
+\tQ & \textbf{Chưa xác minh được}; cần quan sát hệ thống chạy thật hoặc hỏi người vận hành. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Giới hạn.} Trang \c{oj.vnoi.info} nằm sau Cloudflare challenge (HTTP 403, \c{cf-mitigated: challenge}) nên tôi \textbf{không quan sát được hạ tầng chạy thật}: số máy chấm, nơi đặt từng tiến trình, CDN, cách đồng bộ test data lên máy chấm. Mọi kết luận là về \emph{thiết kế trong mã nguồn}, không phải về cách VNOI đang vận hành.

@@ -1,0 +1,48 @@
+\contentsline {section}{\numberline {1}Phạm vi, nguồn và cách đọc}{2}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Độ mới của source}{2}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Cách đọc các nhãn độ chắc chắn}{3}{subsection.1.2}%
+\contentsline {section}{\numberline {2}Bức tranh tổng thể}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Danh mục tiến trình}{4}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Ai nói chuyện với ai}{5}{subsection.2.2}%
+\contentsline {section}{\numberline {3}Site (\texttt {VNOI-Admin/OJ}) chi tiết}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Bản đồ mã nguồn}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Lớp web}{6}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Lớp dữ liệu}{6}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}\texttt {bridged}: bộ điều phối chấm bài}{7}{subsection.3.4}%
+\contentsline {subsubsection}{\numberline {3.4.1}Cấu trúc tiến trình}{7}{subsubsection.3.4.1}%
+\contentsline {subsubsection}{\numberline {3.4.2}Khung gói tin}{8}{subsubsection.3.4.2}%
+\contentsline {subsubsection}{\numberline {3.4.3}Giao thức Django $\leftrightarrow $ \texttt {bridged}}{8}{subsubsection.3.4.3}%
+\contentsline {subsubsection}{\numberline {3.4.4}Giao thức judge $\leftrightarrow $ \texttt {bridged}}{9}{subsubsection.3.4.4}%
+\contentsline {subsubsection}{\numberline {3.4.5}Máy trạng thái của một bài nộp}{9}{subsubsection.3.4.5}%
+\contentsline {subsubsection}{\numberline {3.4.6}Lập lịch trong \texttt {JudgeList}}{10}{subsubsection.3.4.6}%
+\contentsline {subsubsection}{\numberline {3.4.7}Tính điểm và kết luận khi \texttt {grading-end}}{10}{subsubsection.3.4.7}%
+\contentsline {subsubsection}{\numberline {3.4.8}Hành vi khi có sự cố}{10}{subsubsection.3.4.8}%
+\contentsline {subsection}{\numberline {3.5}Hệ thống sự kiện thời gian thực}{11}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6}Celery}{11}{subsection.3.6}%
+\contentsline {subsection}{\numberline {3.7}Kho test data và đường đi của bài tập}{12}{subsection.3.7}%
+\contentsline {subsection}{\numberline {3.8}Balancer (tuỳ chọn)}{13}{subsection.3.8}%
+\contentsline {subsection}{\numberline {3.9}Dịch vụ ngoài}{13}{subsection.3.9}%
+\contentsline {section}{\numberline {4}Judge server (\texttt {VNOI-Admin/judge-server}) chi tiết}{14}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Bản đồ mã nguồn}{14}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Mô hình tiến trình}{14}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Cấu hình và khởi động}{15}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Một bài nộp bên trong judge}{15}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Định dạng bài (\texttt {init.yml})}{16}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Grader: cách chấm một test}{17}{subsection.4.6}%
+\contentsline {subsection}{\numberline {4.7}Checker và các quy ước mã thoát}{17}{subsection.4.7}%
+\contentsline {subsection}{\numberline {4.8}Executor: một lớp cho mỗi ngôn ngữ}{17}{subsection.4.8}%
+\contentsline {subsection}{\numberline {4.9}Sandbox \texttt {cptbox}}{18}{subsection.4.9}%
+\contentsline {subsection}{\numberline {4.10}Đóng gói: các ``tier'' image}{19}{subsection.4.10}%
+\contentsline {subsection}{\numberline {4.11}Điều khiển và quan sát}{19}{subsection.4.11}%
+\contentsline {section}{\numberline {5}Vòng đời một bài nộp từ đầu đến cuối}{19}{section.5}%
+\contentsline {section}{\numberline {6}Từng thành phần: vì sao cần, thiếu thì sao, thay hoặc bỏ được không}{21}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Bảng quyết định tổng hợp}{25}{subsection.6.1}%
+\contentsline {section}{\numberline {7}Sự cố, bảo mật và các phát hiện từ việc đọc code}{26}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Ma trận sự cố}{26}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Bảo mật và cấu hình mặc định}{26}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Các phát hiện}{27}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Những điều chưa xác minh}{28}{subsection.7.4}%
+\contentsline {section}{\numberline {A}Phụ lục}{28}{appendix.A}%
+\contentsline {subsection}{\numberline {A.1}Thuật ngữ và mã trạng thái}{28}{subsection.A.1}%
+\contentsline {subsection}{\numberline {A.2}Cách kiểm tra lại các khẳng định}{28}{subsection.A.2}%
+\contentsline {subsection}{\numberline {A.3}Các file đáng đọc nhất}{29}{subsection.A.3}%
