@@ -33,7 +33,7 @@ function rowValues(health: HealthState): { api: RowValue; database: RowValue; re
   return { api: 'ok', database: health.database, redis: health.redis }
 }
 
-export default function App() {
+export function StatusPage() {
   const { t } = useTranslation()
   const [health, setHealth] = useState<HealthState>('checking')
 
@@ -54,10 +54,6 @@ export default function App() {
   return (
     <Container size="sm" py="xl">
       <Stack gap="lg">
-        <div>
-          <Title order={1}>{t('app.name')}</Title>
-          <Text c="dimmed">{t('app.tagline')}</Text>
-        </div>
         <Card withBorder padding="lg">
           <Stack gap="sm">
             <Group justify="space-between">

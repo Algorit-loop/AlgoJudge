@@ -10,12 +10,16 @@ dependencies = [
     "sqlalchemy[asyncio]",
     "asyncpg",
     "redis",
+    "alembic",
+    "argon2-cffi",
+    "email-validator",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
     "httpx2",
+    "pytest-asyncio",
     "ruff",
 ]
 
@@ -32,3 +36,6 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

@@ -13,6 +13,19 @@ class Settings(BaseSettings):
     # How long /api/health waits for each dependency before reporting it as down.
     health_timeout_seconds: float = 2.0
 
+    # --- Accounts / sessions ---
+    # Whether anyone can create an account from the sign-up page. When false, only admins create accounts (CLI).
+    registration_open: bool = True
+    session_cookie_name: str = "aj_session"
+    # Set to true when the site is served over HTTPS so the browser only sends the cookie over HTTPS.
+    session_cookie_secure: bool = False
+    # Lifetime of a session: "remember me" ticked vs not ticked.
+    session_ttl_remember_seconds: int = 30 * 24 * 3600
+    session_ttl_seconds: int = 24 * 3600
+    # Failed logins allowed per (IP, login name) inside the window before answering 429.
+    login_max_failures: int = 10
+    login_failure_window_seconds: int = 15 * 60
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -21,12 +21,22 @@ Mở <http://localhost:8080>. Trang chủ hiện trạng thái API, CSDL và Red
 | `/api/health` | Kiểm tra trạng thái: 200 nếu mọi thứ ổn, 503 nếu CSDL hoặc Redis mất kết nối |
 
 Chỉ nginx mở cổng ra máy (mặc định 8080, đổi bằng `HTTP_PORT` trong `.env`).
+Khi khởi động, service `api` tự chạy migration CSDL (`alembic upgrade head`).
+
+### Tạo tài khoản admin đầu tiên
+
+```bash
+docker compose exec api python -m algojudge.cli create-user --username admin --email admin@example.com --role admin
+```
+
+Lệnh sẽ hỏi mật khẩu. Đổi vai trò một tài khoản: `docker compose exec api python -m algojudge.cli set-role --username alice --role setter`.
 
 ## Lệnh hay dùng
 
 ```bash
 docker compose logs -f api                           # xem log
-docker compose exec api pytest                       # test site (Python)
+docker compose exec api pytest                       # test site (dùng CSDL riêng algojudge_test, Redis db 15)
+docker compose exec api alembic revision --autogenerate -m "..."   # tạo migration sau khi sửa model
 docker compose exec api ruff check .                 # lint site
 docker compose exec ui npm run typecheck             # kiểm tra kiểu ui
 docker compose down                                  # dừng (giữ dữ liệu)

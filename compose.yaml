@@ -17,7 +17,10 @@ services:
   # FastAPI, built from site/. Later the Celery worker, bridge and wsevent run from the same image with other commands.
   api:
     build: ./site
-    command: ["uvicorn", "algojudge.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # Apply database migrations, then start the API with auto-reload.
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn algojudge.main:app --host 0.0.0.0 --port 8000 --reload"]
+    # Run as the host user so files created in ./site (e.g. new migrations) are not owned by root.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-algojudge}:${POSTGRES_PASSWORD:-algojudge}@postgres:5432/${POSTGRES_DB:-algojudge}
       REDIS_URL: redis://redis:6379/0

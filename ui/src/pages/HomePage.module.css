@@ -1,0 +1,12 @@
+.hero {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background:
+    radial-gradient(circle at 85% 20%, var(--mantine-primary-color-light) 0, transparent 45%),
+    light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8));
+}
+
+.title {
+  font-size: clamp(28px, 5vw, 44px);
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+}
