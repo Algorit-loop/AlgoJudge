@@ -1,7 +1,7 @@
 [project]
-name = "algojudge-backend"
+name = "algojudge-site"
 version = "0.1.0"
-description = "AlgoJudge web backend (FastAPI)"
+description = "AlgoJudge site: FastAPI API (later also Celery worker, bridge, wsevent)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi",

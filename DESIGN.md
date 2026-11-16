@@ -29,7 +29,7 @@
 | D7 | **Test data lưu dạng file** trong thư mục `problems/`, không lưu trong CSDL | Judge dmoj chỉ đọc test từ thư mục trên ổ đĩa (xem mục 8) | 2026-11-16 |
 | D8 | Có **bridge** giữa site và judge | Judge là client TCP lâu dài nói giao thức dmoj. FastAPI không giữ kết nối lâu dài được. Deploy lại backend không làm đứt judge | 2026-11-16 |
 | D9 | Có **Celery** (dùng Redis làm hàng đợi) cùng **Celery beat** | Việc dài như rejudge, giải nén zip test, tính lại bảng xếp hạng, export không được chạy trong request HTTP | 2026-11-16 |
-| D10 | Code đặt **ngay trong repo AlgoJudge**: `backend/`, `frontend/`, `wsevent/`, `bridge/`, `judge-server/`, `deploy/` ở thư mục gốc. `reference/` chỉ để tham khảo, **nằm trong `.gitignore`** | Một repo duy nhất | 2026-11-16 |
+| D10 | Code đặt **ngay trong repo AlgoJudge**: `site/` (toàn bộ Python: API, Celery, bridge, wsevent, trong package `algojudge`), `ui/` (React), `judge-server/` (máy chấm), `deploy/`. `reference/` chỉ để tham khảo, **nằm trong `.gitignore`** | Một repo duy nhất. API, Celery, bridge và wsevent **dùng chung model CSDL và cấu hình**, nên là một project Python chạy bằng nhiều lệnh khác nhau. VNOJ cũng gom như vậy trong repo `site` | 2026-11-16 |
 | D11 | Công cụ backend: Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic v2, quản lý gói bằng `uv` | Bộ công cụ chuẩn cho FastAPI | 2026-11-16 |
 | D12 | Đăng nhập bằng **session trong cookie httpOnly**, phiên lưu ở Redis. **Không dùng JWT** | Web và API cùng một tên miền qua nginx. Đăng xuất là hủy phiên ngay. JavaScript không đọc được cookie | 2026-11-16 |
 | D13 | Frontend: Vite, React, TypeScript, **Mantine**, React Router, TanStack Query. Đề bài render Markdown kèm KaTeX. Ô soạn code dùng CodeMirror | Mantine có đủ component cho trang quản trị, dark mode có sẵn | 2026-11-16 |
@@ -371,6 +371,7 @@ _(Chưa có.)_
 
 ## Lịch sử thay đổi
 
+- **2026-11-16 (8):** Đổi cấu trúc thư mục: `backend/` → `site/` (package `app` → `algojudge`), `frontend/` → `ui/`. `judge-server/` giữ nguyên tên. Service trong Compose: `api`, `ui`.
 - **2026-11-16 (7):** Xong M0. Phiên bản đang dùng: Python 3.12, FastAPI 0.163, SQLAlchemy 2.1, PostgreSQL 17, Redis 7, nginx 1.29; React 19, Vite 8, TypeScript 7, Mantine 9, i18next 27. Nginx mở cổng 8080. Test backend dùng `httpx2`, vì Starlette bản mới đã bỏ dùng `httpx` cho test client.
 - **2026-11-16 (6):** D1 đổi: đưa source judge-server vào repo, có thể sửa sau này (ghi rõ bản gốc). `reference/` vào `.gitignore`.
 - **2026-11-16 (5):** Chốt D10–D15 (vị trí code, công cụ backend, session cookie, Mantine, tiếng Việt kèm i18n, cổng). Thêm lộ trình M0–M7.

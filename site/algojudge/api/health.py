@@ -8,8 +8,8 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.config import Settings, get_settings
-from app.deps import get_engine, get_redis
+from algojudge.config import Settings, get_settings
+from algojudge.deps import get_engine, get_redis
 
 router = APIRouter()
 

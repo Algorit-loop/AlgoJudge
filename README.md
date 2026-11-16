@@ -15,8 +15,8 @@ Mở <http://localhost:8080>. Trang chủ hiện trạng thái API, CSDL và Red
 
 | Đường dẫn | Đi tới |
 |---|---|
-| `/` | Frontend React (Vite dev server, tự tải lại khi sửa code) |
-| `/api/*` | Backend FastAPI (tự tải lại khi sửa code) |
+| `/` | Giao diện React (`ui/` Vite dev server, tự tải lại khi sửa code) |
+| `/api/*` | API FastAPI (`site/`, tự tải lại khi sửa code) |
 | `/api/docs` | Tài liệu API (Swagger) |
 | `/api/health` | Kiểm tra trạng thái: 200 nếu mọi thứ ổn, 503 nếu CSDL hoặc Redis mất kết nối |
 
@@ -25,24 +25,26 @@ Chỉ nginx mở cổng ra máy (mặc định 8080, đổi bằng `HTTP_PORT` t
 ## Lệnh hay dùng
 
 ```bash
-docker compose logs -f backend                       # xem log
-docker compose exec backend pytest                   # test backend
-docker compose exec backend ruff check .             # lint backend
-docker compose exec frontend npm run typecheck       # kiểm tra kiểu frontend
+docker compose logs -f api                           # xem log
+docker compose exec api pytest                       # test site (Python)
+docker compose exec api ruff check .                 # lint site
+docker compose exec ui npm run typecheck             # kiểm tra kiểu ui
 docker compose down                                  # dừng (giữ dữ liệu)
 docker compose down -v                               # dừng và XÓA dữ liệu CSDL/Redis
 ```
 
-Thêm gói Python: sửa `backend/pyproject.toml`, chạy `uv lock` (hoặc qua image `ghcr.io/astral-sh/uv`), rồi `docker compose up -d --build backend`.
-Thêm gói npm: `npm install <gói>` trong `frontend/`, rồi `docker compose up -d --build frontend`.
+Thêm gói Python: sửa `site/pyproject.toml`, chạy `uv lock` (hoặc qua image `ghcr.io/astral-sh/uv`), rồi `docker compose up -d --build api`.
+Thêm gói npm: `npm install <gói>` trong `ui/`, rồi `docker compose up -d --build ui`.
 
 ## Cấu trúc thư mục
 
 ```
-backend/        FastAPI (Python 3.12, uv)
-frontend/       React + TypeScript + Mantine + i18next (Vite)
+site/           Python 3.12 (uv): FastAPI, sau này thêm Celery worker, bridge, wsevent
+  algojudge/    package chính (api/, models/, bridge/, wsevent/, tasks/ — dùng chung model và cấu hình)
+  tests/
+ui/             React + TypeScript + Mantine + i18next (Vite)
+judge-server/   Máy chấm VNOJ (dmoj judge-server), source đưa vào repo
 deploy/nginx/   Cấu hình nginx
-judge-server/   Máy chấm VNOJ (dmoj), source đưa vào repo
 compose.yaml    Docker Compose cho môi trường phát triển
 DESIGN.md       Tài liệu thiết kế
 ```

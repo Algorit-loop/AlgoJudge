@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 // In development the browser talks to nginx (http://localhost:8080), which proxies "/" to this dev server
-// and "/api" to the backend. HMR_CLIENT_PORT tells the hot-reload client to connect back through nginx.
+// and "/api" to the API. HMR_CLIENT_PORT tells the hot-reload client to connect back through nginx.
 const hmrClientPort = process.env.HMR_CLIENT_PORT ? Number(process.env.HMR_CLIENT_PORT) : undefined
 
 export default defineConfig({

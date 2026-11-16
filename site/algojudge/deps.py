@@ -3,7 +3,7 @@
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from app.config import get_settings
+from algojudge.config import get_settings
 
 _engine: AsyncEngine | None = None
 _redis: Redis | None = None

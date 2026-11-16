@@ -10,18 +10,19 @@ services:
     volumes:
       - ./deploy/nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - backend
-      - frontend
+      - api
+      - ui
     restart: unless-stopped
 
-  backend:
-    build: ./backend
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+  # FastAPI, built from site/. Later the Celery worker, bridge and wsevent run from the same image with other commands.
+  api:
+    build: ./site
+    command: ["uvicorn", "algojudge.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-algojudge}:${POSTGRES_PASSWORD:-algojudge}@postgres:5432/${POSTGRES_DB:-algojudge}
       REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./backend:/app
+      - ./site:/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,12 +30,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  frontend:
-    build: ./frontend
+  # React (Vite dev server), built from ui/.
+  ui:
+    build: ./ui
     environment:
       HMR_CLIENT_PORT: ${HTTP_PORT:-8080}
     volumes:
-      - ./frontend:/app
+      - ./ui:/app
       # Keep the container's node_modules (installed by the image) instead of the host's.
       - /app/node_modules
     restart: unless-stopped

@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.deps import get_engine, get_redis
-from app.main import app
+from algojudge.deps import get_engine, get_redis
+from algojudge.main import app
 
 
 class _Conn:

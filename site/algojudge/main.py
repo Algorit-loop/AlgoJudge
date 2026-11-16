@@ -3,8 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import health
-from app.deps import close_connections
+from algojudge.api import health
+from algojudge.deps import close_connections
 
 
 @asynccontextmanager
@@ -13,7 +13,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await close_connections()
 
 
-# Every route lives under /api: nginx forwards /api/* here unchanged, everything else goes to the frontend.
+# Every route lives under /api: nginx forwards /api/* here unchanged, everything else goes to the UI.
 app = FastAPI(
     title="AlgoJudge API",
     lifespan=lifespan,
