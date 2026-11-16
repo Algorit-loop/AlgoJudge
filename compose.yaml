@@ -1,0 +1,70 @@
+# AlgoJudge — development stack.  Usage: `docker compose up --build`, then open http://localhost:${HTTP_PORT:-8080}
+# Only nginx publishes a port on the host; everything else talks over the internal Docker network.
+name: algojudge
+
+services:
+  nginx:
+    image: nginx:1.29-alpine
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./deploy/nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-algojudge}:${POSTGRES_PASSWORD:-algojudge}@postgres:5432/${POSTGRES_DB:-algojudge}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      HMR_CLIENT_PORT: ${HTTP_PORT:-8080}
+    volumes:
+      - ./frontend:/app
+      # Keep the container's node_modules (installed by the image) instead of the host's.
+      - /app/node_modules
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-algojudge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-algojudge}
+      POSTGRES_DB: ${POSTGRES_DB:-algojudge}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

@@ -335,8 +335,8 @@ Hệ thống hỗ trợ cả ba cách, **admin của kỳ thi tự chọn**:
 
 | # | Nội dung | Trạng thái |
 |---|---|---|
-| M0 | Khung dự án: Docker Compose (postgres, redis, nginx), FastAPI `/api/health`, React trang trống, i18n. Dọn git: `.gitignore`, xử lý các gitlink | ⏳ tiếp theo |
-| M1 | Tài khoản: đăng ký, đăng nhập (session), phân quyền admin/setter/user | |
+| M0 | Khung dự án: Docker Compose (postgres, redis, nginx), FastAPI `/api/health`, React trang trống, i18n. Dọn git: `.gitignore`, xử lý các gitlink | ✅ xong (2026-11-16) |
+| M1 | Tài khoản: đăng ký, đăng nhập (session), phân quyền admin/setter/user | ⏳ tiếp theo |
 | M2 | Bài tập: tạo, sửa, hiển thị đề (Markdown + KaTeX) | |
 | M3 | Trang **"sửa testcase"**: upload zip (Celery), gom nhóm, đặt hệ số, chọn checker, sinh `init.yml` | |
 | M4 | Bridge, judge, nộp bài, chấm, tính điểm. **Đọc kỹ phiên bản giao thức judge (`get_judge_version`) trước khi viết bridge** | |
@@ -371,6 +371,7 @@ _(Chưa có.)_
 
 ## Lịch sử thay đổi
 
+- **2026-11-16 (7):** Xong M0. Phiên bản đang dùng: Python 3.12, FastAPI 0.163, SQLAlchemy 2.1, PostgreSQL 17, Redis 7, nginx 1.29; React 19, Vite 8, TypeScript 7, Mantine 9, i18next 27. Nginx mở cổng 8080. Test backend dùng `httpx2`, vì Starlette bản mới đã bỏ dùng `httpx` cho test client.
 - **2026-11-16 (6):** D1 đổi: đưa source judge-server vào repo, có thể sửa sau này (ghi rõ bản gốc). `reference/` vào `.gitignore`.
 - **2026-11-16 (5):** Chốt D10–D15 (vị trí code, công cụ backend, session cookie, Mantine, tiếng Việt kèm i18n, cổng). Thêm lộ trình M0–M7.
 - **2026-11-16 (4):** Chốt: không dùng `batched` của dmoj, subtask là khái niệm riêng của site. Trang "sửa testcase" làm trước phần chạy chấm và tính điểm.

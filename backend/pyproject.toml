@@ -1,0 +1,34 @@
+[project]
+name = "algojudge-backend"
+version = "0.1.0"
+description = "AlgoJudge web backend (FastAPI)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic-settings",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "redis",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "httpx2",
+    "ruff",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

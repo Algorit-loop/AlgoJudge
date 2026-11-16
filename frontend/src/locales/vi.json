@@ -1,0 +1,18 @@
+{
+  "app": {
+    "name": "AlgoJudge",
+    "tagline": "Hệ thống chấm bài lập trình"
+  },
+  "health": {
+    "title": "Trạng thái hệ thống",
+    "api": "API",
+    "database": "Cơ sở dữ liệu",
+    "redis": "Redis",
+    "ok": "Hoạt động",
+    "down": "Mất kết nối",
+    "checking": "Đang kiểm tra…",
+    "unknown": "Không rõ",
+    "unreachable": "Không kết nối được tới API",
+    "refresh": "Kiểm tra lại"
+  }
+}
