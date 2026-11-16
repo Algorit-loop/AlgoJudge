@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { Role } from '../api/types'
 
-const COLOR: Record<Role, string> = { admin: 'red', setter: 'grape', user: 'gray' }
+const COLOR: Record<Role, string> = { superadmin: 'orange', admin: 'red', setter: 'grape', user: 'gray' }
 
 export function RoleBadge({ role }: { role: Role }) {
   const { t } = useTranslation()

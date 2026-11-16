@@ -49,13 +49,22 @@ async def get_user_by_username(username: str, db: DbSession) -> User:
 
 @router.patch("/{user_id}", response_model=AdminUserView)
 async def update_user(user_id: int, body: UserUpdate, admin: AdminUser, db: DbSession, redis: RedisClient) -> User:
-    """Admin only: change a user's role or (de)activate the account."""
+    """Admin only: change a user's role or (de)activate the account.
+
+    You can only manage accounts ranked below you, and only grant roles ranked below you:
+    an admin manages setters/users; a superadmin also manages admins. Superadmin itself is never
+    granted or changed from the web, only from the terminal (python -m algojudge.cli).
+    """
     user = await db.get(User, user_id)
     if user is None:
         raise ApiError(404, "user_not_found")
-    # An admin cannot demote or disable themselves, so the site never ends up without an admin by accident.
-    if user.id == admin.id and ((body.role is not None and body.role != Role.ADMIN) or body.is_active is False):
+    if user.id == admin.id:
+        # Also guarantees the site never loses its last admin by someone demoting themselves.
         raise ApiError(400, "cannot_modify_self")
+    if user.role.rank >= admin.role.rank:
+        raise ApiError(403, "insufficient_rank")
+    if body.role is not None and body.role.rank >= admin.role.rank:
+        raise ApiError(403, "role_not_assignable", field="role")
     if body.role is not None:
         user.role = body.role
     if body.is_active is not None:

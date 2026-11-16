@@ -23,11 +23,10 @@ import { Link } from 'react-router'
 
 import { useMe } from '../../api/auth'
 import { errorCode } from '../../api/client'
-import type { AdminUserView, Role } from '../../api/types'
+import { type AdminUserView, assignableRoles, canManage, type Role, ROLES } from '../../api/types'
 import { useUpdateUser, useUserList } from '../../api/users'
 import { formatDate, formatDateTime, initials } from '../../format'
 
-const ROLES: Role[] = ['admin', 'setter', 'user']
 const PAGE_SIZE = 20
 
 export function UsersPage() {
@@ -54,6 +53,9 @@ export function UsersPage() {
   const total = list.data?.total ?? 0
   const rows = list.data?.items.map((user) => {
     const isSelf = user.id === me?.id
+    // Read-only rows: yourself, and anyone ranked at or above you (superadmins only change from the terminal).
+    const editable = !!me && !isSelf && canManage(me.role, user.role)
+    const options = me ? assignableRoles(me.role).map((r) => ({ value: r, label: t(`role.${r}`) })) : []
     return (
       <Table.Tr key={user.id} opacity={user.is_active ? 1 : 0.55}>
         <Table.Td>
@@ -79,10 +81,11 @@ export function UsersPage() {
           <Select
             size="xs"
             w={150}
-            data={roleOptions}
+            // A locked row still shows its current role, even one the viewer cannot grant.
+            data={editable ? options : [{ value: user.role, label: t(`role.${user.role}`) }]}
             value={user.role}
             allowDeselect={false}
-            disabled={isSelf}
+            disabled={!editable}
             onChange={(value) => value && value !== user.role && save(user, { role: value as Role })}
             aria-label={t('adminUsers.colRole')}
           />
@@ -90,7 +93,7 @@ export function UsersPage() {
         <Table.Td>
           <Switch
             checked={user.is_active}
-            disabled={isSelf}
+            disabled={!editable}
             onChange={(e) => save(user, { is_active: e.currentTarget.checked })}
             aria-label={t('adminUsers.colActive')}
           />

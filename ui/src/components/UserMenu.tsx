@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router'
 
 import { useLogout } from '../api/auth'
-import type { Me } from '../api/types'
+import { isAdmin, type Me } from '../api/types'
 import { initials } from '../format'
 import { RoleBadge } from './RoleBadge'
 
@@ -53,7 +53,7 @@ export function UserMenu({ user }: { user: Me }) {
         <Menu.Item component={Link} to={`/users/${user.username}`} leftSection={<IconUser size={16} />}>
           {t('nav.profile')}
         </Menu.Item>
-        {user.role === 'admin' && (
+        {isAdmin(user.role) && (
           <Menu.Item component={Link} to="/admin/users" leftSection={<IconUsers size={16} />}>
             {t('nav.adminUsers')}
           </Menu.Item>

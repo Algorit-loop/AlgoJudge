@@ -96,7 +96,7 @@ Quy ước: mọi bảng có `id BIGSERIAL` trừ khi ghi khác. Thời gian lư
 
 ### 6.1 Người dùng và ngôn ngữ
 
-**users** [CHỐT — đã làm ở M1, migration `e07c3d8dfc1d`]
+**users** [CHỐT — đã làm ở M1, migration `e07c3d8dfc1d`, `4118966da114`]
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
 | id | bigint identity | |
@@ -104,7 +104,7 @@ Quy ước: mọi bảng có `id BIGSERIAL` trừ khi ghi khác. Thời gian lư
 | email | varchar(254) | Unique không phân biệt hoa thường |
 | password_hash | varchar(255) | Argon2id (argon2-cffi). Tự băm lại khi đăng nhập nếu tham số băm thay đổi |
 | display_name | varchar(64) | Mặc định bằng username |
-| role | varchar(16) + CHECK `admin` / `setter` / `user` | Không dùng enum native của PostgreSQL, để thêm vai trò chỉ cần một migration đơn giản |
+| role | varchar(16) + CHECK `superadmin` / `admin` / `setter` / `user` | Không dùng enum native của PostgreSQL, để thêm vai trò chỉ cần một migration đơn giản (`superadmin` đã được thêm theo cách này) |
 | is_active | bool | `false` = bị khóa: không đăng nhập được, mọi phiên đang mở bị hủy |
 | created_at | timestamptz | |
 | last_login_at | timestamptz, nullable | |
@@ -352,7 +352,7 @@ Hệ thống hỗ trợ cả ba cách, **admin của kỳ thi tự chọn**:
 - Đăng ký **mở mặc định**, tắt bằng `REGISTRATION_OPEN=false`. Khi tắt, chỉ admin tạo tài khoản bằng CLI. **Chưa xác thực email** (để sau).
 - Đăng nhập bằng **tên đăng nhập hoặc email**, không phân biệt hoa thường. Mật khẩu dài 8–128 ký tự.
 - **Chống dò mật khẩu:** sai 10 lần trong 15 phút với cùng một cặp (IP, tên đăng nhập) thì trả 429. IP lấy từ header `X-Real-IP` do nginx đặt. Khi tên đăng nhập không tồn tại, vẫn chạy kiểm tra trên một hash giả để thời gian phản hồi không để lộ tài khoản nào có thật.
-- **Admin đầu tiên** được tạo bằng CLI: `docker compose exec api python -m algojudge.cli create-user --username ... --email ... --role admin`. Đổi vai trò: `... cli set-role`.
+- **Superadmin đầu tiên** được tạo từ terminal: `./scripts/create-superadmin.sh`. Script hỏi lần lượt tên đăng nhập, email, tên hiển thị và mật khẩu, hoặc nhận tham số dòng lệnh. Bên trong, script gọi `python -m algojudge.cli create-superadmin`. Ngoài ra có `create-user --role ...` và `set-role`.
 
 **Session** (D12)
 - Cookie `aj_session`: httpOnly, SameSite=Lax, `Secure` khi bật `SESSION_COOKIE_SECURE`. Cookie chỉ chứa một token ngẫu nhiên.
@@ -361,12 +361,18 @@ Hệ thống hỗ trợ cả ba cách, **admin của kỳ thi tự chọn**:
 - **Vai trò được đọc lại từ CSDL ở mỗi request**, nên đổi vai trò có hiệu lực ngay. Khóa tài khoản thì mọi phiên của người đó bị hủy.
 - **CSRF:** nhờ SameSite=Lax và việc API chỉ nhận body JSON, form của trang khác không gửi được request thay người dùng.
 
-**Phân quyền**
-- `admin`: làm mọi việc, kể cả quản lý người dùng ở `/admin/users`.
-- `setter`: dùng từ M2 để ra đề.
-- `user`: thí sinh.
-- Kiểm tra quyền ở API bằng `require_role(...)`, và admin luôn qua.
-- **Admin không thể tự hạ quyền hoặc tự khóa mình**, để trang không bao giờ vô tình mất hết admin.
+**Phân quyền** (thứ bậc từ cao xuống thấp)
+
+| Vai trò | Làm được gì |
+|---|---|
+| `superadmin` | Mọi việc của admin, **cộng thêm quản lý admin** (cấp hoặc thu quyền admin, khóa admin). **Chỉ tạo hoặc cấp được từ terminal** |
+| `admin` | Quản lý trang, và quản lý người dùng **có vai trò thấp hơn admin** (setter, user) ở `/admin/users` |
+| `setter` | Ra đề (từ M2) |
+| `user` | Thí sinh |
+
+- **Quy tắc trên web:** mỗi người chỉ sửa được tài khoản **có vai trò thấp hơn mình**, và chỉ cấp được vai trò **thấp hơn mình**. Không ai tự sửa được tài khoản của chính mình. Vì vậy **không có cách nào cấp hoặc thu quyền superadmin qua web**: dù một tài khoản admin bị lộ, người đó cũng không tự nâng lên superadmin hay khóa superadmin được.
+- **Terminal là nơi có quyền cao nhất** (người có quyền vào máy chủ). `set-role` không cho hạ quyền superadmin **cuối cùng** đang hoạt động, trừ khi thêm `--force`.
+- Ở API, quyền được kiểm tra bằng `require_role(...)`, và admin cùng superadmin luôn qua. Mã lỗi: `insufficient_rank` (sửa người có vai trò ngang hoặc cao hơn mình), `role_not_assignable` (cấp vai trò ngang hoặc cao hơn mình), `cannot_modify_self`.
 
 **Lỗi API** trả về mã máy đọc được, ví dụ `{"detail": {"code": "username_taken", "field": "username"}}`. Giao diện dịch mã qua i18n (`errors.<code>`), nên API không bao giờ trả câu chữ cho người dùng.
 
@@ -377,8 +383,8 @@ Hệ thống hỗ trợ cả ba cách, **admin của kỳ thi tự chọn**:
 | `GET /api/auth/me`, `GET /api/auth/registration` | Mọi người |
 | `POST /api/auth/register`, `/login`, `/logout` | Mọi người |
 | `GET /api/users/by-username/{u}` | Mọi người. Trang cá nhân, không có email |
-| `GET /api/users?q=&role=&page=` | Admin |
-| `PATCH /api/users/{id}` (`role`, `is_active`) | Admin |
+| `GET /api/users?q=&role=&page=` | Admin, superadmin |
+| `PATCH /api/users/{id}` (`role`, `is_active`) | Admin, superadmin, theo quy tắc thứ bậc ở trên |
 
 **Giao diện**
 - Mantine, màu chủ đạo indigo, có chế độ sáng/tối (theo máy và chuyển tay được).
@@ -416,6 +422,7 @@ _(Chưa có.)_
 
 ## Lịch sử thay đổi
 
+- **2026-11-16 (10):** Thêm vai trò `superadmin` (migration `4118966da114`). Quản lý người dùng theo thứ bậc. Quyền superadmin chỉ cấp từ terminal (`scripts/create-superadmin.sh`). Bảo vệ superadmin cuối cùng.
 - **2026-11-16 (9):** Xong M1: bảng `users` (migration đầu tiên), argon2id, session trong Redis, phân quyền, CLI tạo admin, giao diện (layout, trang chủ, đăng nhập/đăng ký, trang cá nhân, quản lý người dùng), font Inter đóng gói sẵn. Service `api` tự chạy `alembic upgrade head` khi khởi động, và chạy bằng UID của người dùng. Thêm mục 6.7.
 - **2026-11-16 (8):** Đổi cấu trúc thư mục: `backend/` → `site/` (package `app` → `algojudge`), `frontend/` → `ui/`. `judge-server/` giữ nguyên tên. Service trong Compose: `api`, `ui`.
 - **2026-11-16 (7):** Xong M0. Phiên bản đang dùng: Python 3.12, FastAPI 0.163, SQLAlchemy 2.1, PostgreSQL 17, Redis 7, nginx 1.29; React 19, Vite 8, TypeScript 7, Mantine 9, i18next 27. Nginx mở cổng 8080. Test backend dùng `httpx2`, vì Starlette bản mới đã bỏ dùng `httpx` cho test client.

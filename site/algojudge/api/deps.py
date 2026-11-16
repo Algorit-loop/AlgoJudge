@@ -46,10 +46,10 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 def require_role(*roles: Role) -> Callable[[User], Coroutine[Any, Any, User]]:
-    """Dependency factory: the current user must have one of the given roles (admins always pass)."""
+    """Dependency factory: the current user must have one of the given roles (admins and superadmins always pass)."""
 
     async def checker(user: CurrentUser) -> User:
-        if user.role != Role.ADMIN and user.role not in roles:
+        if not user.role.is_admin and user.role not in roles:
             raise ApiError(403, "forbidden")
         return user
 

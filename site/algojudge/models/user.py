@@ -8,9 +8,23 @@ from algojudge.models.base import Base
 
 
 class Role(enum.StrEnum):
-    ADMIN = "admin"  # manages everything, including users
+    # Highest first. A role can only be granted from the terminal (CLI) if it is SUPERADMIN.
+    SUPERADMIN = "superadmin"  # everything admins can do, plus managing admins; created only via the CLI
+    ADMIN = "admin"  # manages the site and users below admin
     SETTER = "setter"  # creates and edits problems and contests
     USER = "user"  # solves problems, takes part in contests
+
+    @property
+    def rank(self) -> int:
+        return _RANK[self]
+
+    @property
+    def is_admin(self) -> bool:
+        """Admin or above."""
+        return self.rank >= _RANK[Role.ADMIN]
+
+
+_RANK = {Role.USER: 0, Role.SETTER: 1, Role.ADMIN: 2, Role.SUPERADMIN: 3}
 
 
 class User(Base):

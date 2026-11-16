@@ -18,6 +18,7 @@
     "openMenu": "Mở menu"
   },
   "role": {
+    "superadmin": "Siêu quản trị",
     "admin": "Quản trị viên",
     "setter": "Người ra đề",
     "user": "Thí sinh"
@@ -84,7 +85,9 @@
     "user_not_found": "Không tìm thấy người dùng.",
     "cannot_modify_self": "Bạn không thể tự hạ quyền hoặc tự khóa tài khoản của mình.",
     "network": "Không kết nối được tới máy chủ.",
-    "unknown": "Đã có lỗi xảy ra. Hãy thử lại."
+    "unknown": "Đã có lỗi xảy ra. Hãy thử lại.",
+    "insufficient_rank": "Bạn chỉ quản lý được tài khoản có vai trò thấp hơn mình.",
+    "role_not_assignable": "Bạn không thể cấp vai trò này."
   },
   "profile": {
     "joined": "Tham gia ngày {{date}}",

@@ -23,13 +23,21 @@ Mở <http://localhost:8080>. Trang chủ hiện trạng thái API, CSDL và Red
 Chỉ nginx mở cổng ra máy (mặc định 8080, đổi bằng `HTTP_PORT` trong `.env`).
 Khi khởi động, service `api` tự chạy migration CSDL (`alembic upgrade head`).
 
-### Tạo tài khoản admin đầu tiên
+### Tạo tài khoản superadmin
 
 ```bash
-docker compose exec api python -m algojudge.cli create-user --username admin --email admin@example.com --role admin
+./scripts/create-superadmin.sh
 ```
 
-Lệnh sẽ hỏi mật khẩu. Đổi vai trò một tài khoản: `docker compose exec api python -m algojudge.cli set-role --username alice --role setter`.
+Script hỏi lần lượt tên đăng nhập, email, tên hiển thị và mật khẩu. Cũng có thể truyền sẵn: `./scripts/create-superadmin.sh --username root --email root@example.com`.
+
+Quyền **superadmin chỉ cấp được từ terminal**. Trên web, mỗi người chỉ quản lý được tài khoản có vai trò thấp hơn mình (superadmin > admin > setter > user). Các lệnh khác:
+
+```bash
+docker compose exec api python -m algojudge.cli set-role --username alice --role admin        # đổi vai trò (kể cả superadmin)
+docker compose exec api python -m algojudge.cli create-user --username bob --email b@x.y --role setter
+docker compose exec api python -m algojudge.cli --help
+```
 
 ## Lệnh hay dùng
 
@@ -55,6 +63,7 @@ site/           Python 3.12 (uv): FastAPI, sau này thêm Celery worker, bridge,
 ui/             React + TypeScript + Mantine + i18next (Vite)
 judge-server/   Máy chấm VNOJ (dmoj judge-server), source đưa vào repo
 deploy/nginx/   Cấu hình nginx
+scripts/        Script tiện ích (create-superadmin.sh)
 compose.yaml    Docker Compose cho môi trường phát triển
 DESIGN.md       Tài liệu thiết kế
 ```
