@@ -1,5 +1,5 @@
 import { Anchor, Button, Card, Container, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
-import { IconFileCode, IconInbox, IconListNumbers, IconTrophy } from '@tabler/icons-react'
+import { IconFileCode, IconInbox, IconListNumbers, IconTrophy } from '../icons'
 import type { ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'

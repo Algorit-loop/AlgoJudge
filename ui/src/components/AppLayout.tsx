@@ -1,6 +1,6 @@
 import { Anchor, AppShell, Burger, Button, Container, Group, NavLink, Skeleton, Stack, Text } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { IconCode, IconFileCode, IconHome, IconListCheck, IconTrophy } from '@tabler/icons-react'
+import { IconCode, IconFileCode, IconHome, IconListCheck, IconTrophy } from '../icons'
 import type { ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, NavLink as RouterNavLink, Outlet, useLocation } from 'react-router'

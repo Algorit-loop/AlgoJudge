@@ -1,7 +1,7 @@
 import 'katex/dist/katex.min.css'
 
 import { ActionIcon, CopyButton, Tooltip } from '@mantine/core'
-import { IconCheck, IconCopy } from '@tabler/icons-react'
+import { IconCheck, IconCopy } from '../icons'
 import type { ComponentPropsWithoutRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown, { type Components } from 'react-markdown'

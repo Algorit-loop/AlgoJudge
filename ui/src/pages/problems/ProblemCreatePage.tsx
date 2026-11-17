@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Container, Group, NumberInput, Stack, TextInput, Title } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { IconAlertCircle } from '@tabler/icons-react'
+import { IconAlertCircle } from '../../icons'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 

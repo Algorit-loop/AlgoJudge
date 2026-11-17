@@ -127,7 +127,10 @@
     "forbiddenTitle": "Không có quyền truy cập",
     "forbiddenText": "Trang này chỉ dành cho quản trị viên.",
     "save": "Lưu",
-    "cancel": "Hủy"
+    "cancel": "Hủy",
+    "errorTitle": "Đã có lỗi khi hiển thị trang",
+    "errorText": "Hãy thử tải lại trang. Nếu vẫn lỗi, có thể kết nối mạng đang chập chờn.",
+    "reload": "Tải lại trang"
   },
   "health": {
     "title": "Trạng thái hệ thống",

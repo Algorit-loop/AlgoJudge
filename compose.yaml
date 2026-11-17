@@ -39,8 +39,6 @@ services:
   # React (Vite dev server), built from ui/.
   ui:
     build: ./ui
-    environment:
-      HMR_CLIENT_PORT: ${HTTP_PORT:-8080}
     volumes:
       - ./ui:/app
       # Keep the container's node_modules (installed by the image) instead of the host's.

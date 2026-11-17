@@ -1,6 +1,6 @@
 import { Avatar, Group, Menu, Text, UnstyledButton } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconChevronDown, IconLogout, IconUser, IconUsers } from '@tabler/icons-react'
+import { IconChevronDown, IconLogout, IconUser, IconUsers } from '../icons'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router'
 

@@ -22,7 +22,7 @@ import {
 import { useForm } from '@mantine/form'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import { IconAlertCircle, IconArrowLeft, IconDeviceFloppy, IconPhoto, IconTrash } from '@tabler/icons-react'
+import { IconAlertCircle, IconArrowLeft, IconDeviceFloppy, IconPhoto, IconTrash } from '../../icons'
 import { type ClipboardEvent, type DragEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router'

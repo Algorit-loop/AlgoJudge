@@ -1,5 +1,5 @@
 import { Badge, Group } from '@mantine/core'
-import { IconClock, IconCpu } from '@tabler/icons-react'
+import { IconClock, IconCpu } from '../icons'
 import { useTranslation } from 'react-i18next'
 
 import { formatMegabytes, formatSeconds } from '../format'

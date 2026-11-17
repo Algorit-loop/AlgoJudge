@@ -1,5 +1,5 @@
 import { Anchor, Badge, Button, Card, Center, Container, Group, Loader, Stack, Text, Title } from '@mantine/core'
-import { IconEdit, IconLock } from '@tabler/icons-react'
+import { IconEdit, IconLock } from '../../icons'
 import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router'

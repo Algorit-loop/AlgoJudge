@@ -1,7 +1,7 @@
 import { Alert, Button, Center, Loader, PasswordInput, Stack, TextInput } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { notifications } from '@mantine/notifications'
-import { IconAlertCircle, IconLock } from '@tabler/icons-react'
+import { IconAlertCircle, IconLock } from '../icons'
 import { useTranslation } from 'react-i18next'
 import { Navigate, useNavigate } from 'react-router'
 

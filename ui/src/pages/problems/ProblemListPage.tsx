@@ -15,7 +15,7 @@ import {
   Title,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconAlertCircle, IconLock, IconPlus, IconSearch } from '@tabler/icons-react'
+import { IconAlertCircle, IconLock, IconPlus, IconSearch } from '../../icons'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'

@@ -10,11 +10,14 @@ import { LoginPage } from './pages/LoginPage'
 import { ComingSoonPage, NotFoundPage } from './pages/MessagePage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
+import { RouteError } from './pages/RouteError'
 import { StatusPage } from './pages/StatusPage'
 
 export const router = createBrowserRouter([
   {
     element: <AppLayout />,
+    // Never leave a blank screen: render errors (incl. a page's code failing to load) show RouteError.
+    errorElement: <RouteError />,
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/login', element: <LoginPage /> },
