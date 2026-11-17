@@ -5,6 +5,7 @@ Runs inside the api container: `docker compose exec api pytest`.
 
 import asyncio
 import os
+import tempfile
 
 # Point the app at the test database/redis BEFORE anything reads the settings.
 _base_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://algojudge:algojudge@localhost:5432/algojudge")
@@ -12,6 +13,8 @@ _server_url, _ = _base_url.rsplit("/", 1)
 TEST_DB = "algojudge_test"
 os.environ["DATABASE_URL"] = f"{_server_url}/{TEST_DB}"
 os.environ["REDIS_URL"] = os.environ.get("REDIS_URL", "redis://localhost:6379/0").rsplit("/", 1)[0] + "/15"
+# Uploaded files go to a throw-away directory, not the real media folder.
+os.environ["MEDIA_DIR"] = tempfile.mkdtemp(prefix="algojudge-test-media-")
 
 import httpx2  # noqa: E402
 import pytest  # noqa: E402
@@ -44,7 +47,7 @@ async def _database():
 @pytest.fixture(autouse=True)
 async def _clean_state():
     async with get_engine().begin() as conn:
-        await conn.execute(text("TRUNCATE users RESTART IDENTITY CASCADE"))
+        await conn.execute(text("TRUNCATE users, problems RESTART IDENTITY CASCADE"))
     await get_redis().flushdb()
     yield
     app.dependency_overrides.clear()
@@ -79,3 +82,16 @@ async def new_client():
 async def register(client, username="alice", email=None, password="password123", **extra):
     body = {"username": username, "email": email or f"{username}@example.com", "password": password, **extra}
     return await client.post("/api/auth/register", json=body)
+
+
+async def login_as(new_client, username: str, role, password: str = "password123"):
+    """Create a user with `role` directly in the DB and return a client logged in as them."""
+    from algojudge.auth.users import create_user
+    from algojudge.deps import get_sessionmaker
+
+    async with get_sessionmaker()() as db:
+        await create_user(db, username=username, email=f"{username}@example.com", password=password, role=role)
+    c = new_client()
+    r = await c.post("/api/auth/login", json={"login": username, "password": password})
+    assert r.status_code == 200, r.text
+    return c

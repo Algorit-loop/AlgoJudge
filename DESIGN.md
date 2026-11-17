@@ -119,18 +119,26 @@ Quy ước: mọi bảng có `id BIGSERIAL` trừ khi ghi khác. Thời gian lư
 
 ### 6.2 Bài tập và test
 
-**problems**
+**problems** [CHỐT — đã làm ở M2, migration `faaf0ac385e1`]
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
-| code | text, unique | Mã bài, **đồng thời là tên thư mục** `problems/<code>/` |
-| title | text | |
-| statement_md | text | Đề bài dạng Markdown, có LaTeX |
-| time_limit_ms | int | |
-| memory_limit_kb | int | |
-| visibility | enum `public` / `private` | **Admin tự đổi**, không có gì tự động. Hết kỳ thi, bài vẫn giữ nguyên trạng thái cũ cho đến khi admin công khai |
-| author_id | → users | |
-| data_version | text | Hash của bộ test hiện tại, đổi mỗi khi upload test mới |
+| id | bigint identity | |
+| code | varchar(32), unique, CHECK `^[a-z0-9_]{2,32}$` | Mã bài, **đồng thời là tên thư mục** `problems/<code>/`. **Không đổi được sau khi tạo** |
+| title | varchar(200) | |
+| statement_md | text | Đề bài dạng Markdown kèm LaTeX, tối đa 100.000 ký tự. Ví dụ mẫu viết thẳng trong đề |
+| time_limit_ms | int, CHECK 100–20.000 | Mặc định 1000 |
+| memory_limit_kb | int, CHECK 16 MB–2 GB | Mặc định 256 MB |
+| visibility | varchar + CHECK `public` / `private` | Mặc định `private`. **Chỉ admin đổi** (D: "Admin tự đổi") |
+| created_by_id | → users, `SET NULL` | Người tạo |
 | created_at, updated_at | timestamptz | |
+
+**problem_authors** [CHỐT]: những người được sửa bài, ngoài admin. Người tạo bài là tác giả đầu tiên.
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| problem_id | → problems, `CASCADE` | PK (problem_id, user_id) |
+| user_id | → users, `CASCADE` | Có index. Tác giả phải là setter trở lên |
+
+`data_version` và các cột cấu hình chấm sẽ thêm ở M3, cùng bảng `problem_data`.
 
 #### Cấu hình test là gì? [CHỐT]
 
@@ -339,8 +347,8 @@ Hệ thống hỗ trợ cả ba cách, **admin của kỳ thi tự chọn**:
 |---|---|---|
 | M0 | Khung dự án: Docker Compose (postgres, redis, nginx), FastAPI `/api/health`, React trang trống, i18n. Dọn git: `.gitignore`, xử lý các gitlink | ✅ xong (2026-11-16) |
 | M1 | Tài khoản: đăng ký, đăng nhập (session), phân quyền admin/setter/user, giao diện và trang chủ | ✅ xong (2026-11-16), xem 6.7 |
-| M2 | Bài tập: tạo, sửa, hiển thị đề (Markdown + KaTeX) | ⏳ tiếp theo |
-| M3 | Trang **"sửa testcase"**: upload zip (Celery), gom nhóm, đặt hệ số, chọn checker, sinh `init.yml` | |
+| M2 | Bài tập: tạo, sửa, hiển thị đề (Markdown + KaTeX) | ✅ xong (2026-11-17), xem 6.8 |
+| M3 | Trang **"sửa testcase"**: upload zip (Celery), gom nhóm, đặt hệ số, chọn checker, sinh `init.yml` | ⏳ tiếp theo |
 | M4 | Bridge, judge, nộp bài, chấm, tính điểm. **Đọc kỹ phiên bản giao thức judge (`get_judge_version`) trước khi viết bridge** | |
 | M5 | wsevent: cập nhật thời gian thực, kèm polling dự phòng | |
 | M6 | Kỳ thi ICPC: penalty, đóng băng bảng, hỏi đáp | |
@@ -395,6 +403,54 @@ Hệ thống hỗ trợ cả ba cách, **admin của kỳ thi tự chọn**:
 
 **Để sau [HOÃN]:** xác thực email, quên mật khẩu, tự đổi mật khẩu và sửa hồ sơ, ảnh đại diện, nút "đăng xuất mọi thiết bị" trên giao diện, tách nhỏ bundle JS (hiện khoảng 600 KB chưa nén).
 
+## 6.8 Bài tập (M2) [CHỐT]
+
+**Quyền**
+
+| Việc | Ai làm được |
+|---|---|
+| Xem bài `public` | Mọi người, kể cả khách chưa đăng nhập |
+| Xem bài `private` | Tác giả của bài, admin, superadmin. Người khác nhận **404** (không để lộ việc bài tồn tại) |
+| Tạo bài | Setter trở lên. Bài mới luôn ở chế độ `private`, người tạo là tác giả |
+| Sửa (tên, đề, giới hạn, tác giả, ảnh) | Tác giả (phải là setter trở lên), admin, superadmin |
+| Công khai hoặc ẩn bài, xóa bài | **Chỉ admin và superadmin** |
+
+- **Mời đồng tác giả:** thay danh sách tác giả (`PUT /authors`). Tác giả phải là setter trở lên và đang hoạt động. Danh sách không được rỗng.
+
+**Đề bài**
+- Markdown theo chuẩn GitHub kèm LaTeX: `$...$` cho công thức trong dòng, `$$...$$` cho công thức khối. Một dòng chỉ chứa `$$...$$` cũng được tự chuyển thành công thức khối.
+- **Ví dụ mẫu viết thẳng trong Markdown**, đặt trong khối ```. Mọi khối code đều có nút copy.
+- **Không render HTML thô** trong đề: `<script>` hiện ra dưới dạng chữ (chống XSS).
+
+**Ảnh trong đề**
+- Upload qua nút "Chèn ảnh", dán từ clipboard, hoặc kéo-thả vào ô soạn. Tối đa 5 MB.
+- Chỉ nhận PNG, JPEG, GIF, WebP, **nhận diện qua các byte đầu của file** chứ không qua tên file. SVG bị từ chối vì có thể chứa script.
+- Lưu ở `data/media/problems/<code>/<sha256>.<ext>`. Tên file là hash của nội dung, nên upload lại cùng một ảnh không tạo file mới, và URL khó đoán. Không có bảng CSDL riêng cho ảnh.
+- nginx phục vụ `/media/` ở chế độ chỉ đọc, kèm `X-Content-Type-Options: nosniff` và CSP `default-src 'none'`. Không liệt kê được thư mục.
+- **Lưu ý:** ảnh của bài `private` vẫn xem được nếu biết URL. URL khó đoán (hash 128 bit), nhưng không được kiểm tra quyền.
+
+**API**
+
+| Endpoint | Ghi chú |
+|---|---|
+| `GET /api/problems?q=&mine=&sort=code\|newest&page=&page_size=` | Chỉ trả những bài người xem được xem |
+| `POST /api/problems` | Setter trở lên |
+| `GET /api/problems/{code}` | Có thêm `can_edit` và `can_change_visibility` để giao diện ẩn hoặc hiện nút |
+| `PATCH /api/problems/{code}` | `visibility` chỉ admin đổi được (lỗi `visibility_admin_only`) |
+| `DELETE /api/problems/{code}` | Admin |
+| `PUT /api/problems/{code}/authors` | `{usernames: [...]}` |
+| `POST /api/problems/{code}/images` | multipart, trả về `{url}` |
+
+**Giao diện**
+- `/problems`: danh sách bài, tìm kiếm, lọc "Bài của tôi" và nút "Tạo bài" cho setter trở lên.
+- `/problems/new`: tạo bài, sau đó chuyển sang trang soạn.
+- `/problems/:code`: trang đề.
+- `/problems/:code/edit`: soạn đề. Trên màn hình rộng, ô soạn và phần xem trước nằm cạnh nhau. Trên điện thoại, chuyển qua lại giữa "Soạn" và "Xem trước". Rời trang khi có thay đổi chưa lưu thì trình duyệt cảnh báo.
+- Trang chủ hiện 6 bài công khai mới nhất.
+- **Các trang bài tập được tải khi cần (lazy)**: Markdown và KaTeX (khoảng 450 KB) không nằm trong file JS chính. File JS chính giảm từ khoảng 600 KB xuống 478 KB.
+
+**Để sau [HOÃN]:** tag và độ khó, điểm luyện tập, danh sách ngôn ngữ được phép theo từng bài (M4), trình soạn có thanh công cụ định dạng, ảnh riêng tư có kiểm tra quyền.
+
 ## 7. Hoãn lại [HOÃN]
 
 - Dành riêng nhân CPU cho judge và giới hạn RAM các container. Dễ cài khi cần: thêm `cpuset` và `mem_limit` trong Docker Compose. Lưu ý phải giới hạn cả phía site, và `mem_limit` của judge phải lớn hơn giới hạn bộ nhớ lớn nhất của bài cộng phần dư.
@@ -422,6 +478,7 @@ _(Chưa có.)_
 
 ## Lịch sử thay đổi
 
+- **2026-11-17:** Xong M2: bảng `problems` và `problem_authors` (migration `faaf0ac385e1`), quyền xem và sửa theo tác giả, chỉ admin công khai hoặc xóa bài, đề Markdown kèm KaTeX (không render HTML thô), nút copy cho khối code, upload ảnh (nhận diện qua byte đầu, không nhận SVG, lưu ở `data/media`, nginx `/media/`), các trang bài tập được tải khi cần. Thêm mục 6.8.
 - **2026-11-16 (10):** Thêm vai trò `superadmin` (migration `4118966da114`). Quản lý người dùng theo thứ bậc. Quyền superadmin chỉ cấp từ terminal (`scripts/create-superadmin.sh`). Bảo vệ superadmin cuối cùng.
 - **2026-11-16 (9):** Xong M1: bảng `users` (migration đầu tiên), argon2id, session trong Redis, phân quyền, CLI tạo admin, giao diện (layout, trang chủ, đăng nhập/đăng ký, trang cá nhân, quản lý người dùng), font Inter đóng gói sẵn. Service `api` tự chạy `alembic upgrade head` khi khởi động, và chạy bằng UID của người dùng. Thêm mục 6.7.
 - **2026-11-16 (8):** Đổi cấu trúc thư mục: `backend/` → `site/` (package `app` → `algojudge`), `frontend/` → `ui/`. `judge-server/` giữ nguyên tên. Service trong Compose: `api`, `ui`.

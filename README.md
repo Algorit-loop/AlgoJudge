@@ -48,7 +48,7 @@ docker compose exec api alembic revision --autogenerate -m "..."   # tạo migra
 docker compose exec api ruff check .                 # lint site
 docker compose exec ui npm run typecheck             # kiểm tra kiểu ui
 docker compose down                                  # dừng (giữ dữ liệu)
-docker compose down -v                               # dừng và XÓA dữ liệu CSDL/Redis
+docker compose down -v                               # dừng và XÓA dữ liệu CSDL/Redis (file trong data/ vẫn còn)
 ```
 
 Thêm gói Python: sửa `site/pyproject.toml`, chạy `uv lock` (hoặc qua image `ghcr.io/astral-sh/uv`), rồi `docker compose up -d --build api`.
@@ -64,6 +64,7 @@ ui/             React + TypeScript + Mantine + i18next (Vite)
 judge-server/   Máy chấm VNOJ (dmoj judge-server), source đưa vào repo
 deploy/nginx/   Cấu hình nginx
 scripts/        Script tiện ích (create-superadmin.sh)
+data/media/     File được upload (ảnh trong đề). Không đưa vào git, nginx phục vụ ở /media/
 compose.yaml    Docker Compose cho môi trường phát triển
 DESIGN.md       Tài liệu thiết kế
 ```

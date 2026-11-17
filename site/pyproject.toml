@@ -13,6 +13,7 @@ dependencies = [
     "alembic",
     "argon2-cffi",
     "email-validator",
+    "python-multipart",
 ]
 
 [dependency-groups]

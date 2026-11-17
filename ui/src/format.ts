@@ -18,3 +18,11 @@ export function initials(name: string): string {
   const last = parts.length > 1 ? parts[parts.length - 1][0] : ''
   return (first + last).toUpperCase()
 }
+
+const decimal = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 })
+
+/** 1000 -> "1 giây", 1500 -> "1,5 giây" (unit text comes from i18n via the caller when needed). */
+export const formatSeconds = (ms: number) => decimal.format(ms / 1000)
+
+/** 262144 -> "256" (MB). */
+export const formatMegabytes = (kb: number) => decimal.format(kb / 1024)

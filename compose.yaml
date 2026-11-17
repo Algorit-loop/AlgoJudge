@@ -9,6 +9,7 @@ services:
       - "${HTTP_PORT:-8080}:80"
     volumes:
       - ./deploy/nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./data/media:/data/media:ro
     depends_on:
       - api
       - ui
@@ -26,6 +27,8 @@ services:
       REDIS_URL: redis://redis:6379/0
     volumes:
       - ./site:/app
+      # Uploaded files (statement images); nginx serves them at /media/.
+      - ./data/media:/data/media
     depends_on:
       postgres:
         condition: service_healthy

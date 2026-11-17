@@ -41,7 +41,8 @@
     "upcomingContests": "Kỳ thi sắp diễn ra",
     "noContests": "Chưa có kỳ thi nào.",
     "newProblems": "Bài tập mới",
-    "noProblems": "Chưa có bài tập nào."
+    "noProblems": "Chưa có bài tập nào.",
+    "viewAll": "Xem tất cả"
   },
   "auth": {
     "loginTitle": "Đăng nhập",
@@ -87,7 +88,14 @@
     "network": "Không kết nối được tới máy chủ.",
     "unknown": "Đã có lỗi xảy ra. Hãy thử lại.",
     "insufficient_rank": "Bạn chỉ quản lý được tài khoản có vai trò thấp hơn mình.",
-    "role_not_assignable": "Bạn không thể cấp vai trò này."
+    "role_not_assignable": "Bạn không thể cấp vai trò này.",
+    "problem_not_found": "Không tìm thấy bài này.",
+    "problem_code_taken": "Mã bài này đã có.",
+    "visibility_admin_only": "Chỉ quản trị viên mới công khai hoặc ẩn bài được.",
+    "authors_required": "Bài phải có ít nhất một tác giả.",
+    "author_must_be_setter": "Tác giả phải là người ra đề (setter) trở lên.",
+    "image_too_large": "Ảnh quá lớn (tối đa 5 MB).",
+    "image_type_not_allowed": "Chỉ nhận ảnh PNG, JPEG, GIF hoặc WebP."
   },
   "profile": {
     "joined": "Tham gia ngày {{date}}",
@@ -117,7 +125,9 @@
     "notFoundTitle": "Không tìm thấy trang",
     "notFoundText": "Trang bạn tìm không tồn tại hoặc đã bị chuyển đi.",
     "forbiddenTitle": "Không có quyền truy cập",
-    "forbiddenText": "Trang này chỉ dành cho quản trị viên."
+    "forbiddenText": "Trang này chỉ dành cho quản trị viên.",
+    "save": "Lưu",
+    "cancel": "Hủy"
   },
   "health": {
     "title": "Trạng thái hệ thống",
@@ -130,5 +140,63 @@
     "unknown": "Không rõ",
     "unreachable": "Không kết nối được tới API",
     "refresh": "Kiểm tra lại"
+  },
+  "problems": {
+    "title": "Bài tập",
+    "create": "Tạo bài",
+    "createTitle": "Tạo bài mới",
+    "createSubmit": "Tạo và soạn đề",
+    "search": "Tìm theo mã hoặc tên bài",
+    "scopeAll": "Tất cả",
+    "scopeMine": "Bài của tôi",
+    "colCode": "Mã bài",
+    "colTitle": "Tên bài",
+    "colTime": "Thời gian",
+    "colMemory": "Bộ nhớ",
+    "secondsShort": "{{value}} s",
+    "megabytesShort": "{{value}} MB",
+    "timeLimitValue": "{{value}} giây",
+    "memoryLimitValue": "{{value}} MB",
+    "empty": "Chưa có bài tập nào.",
+    "noMatch": "Không có bài nào khớp.",
+    "private": "Riêng tư",
+    "public": "Công khai",
+    "notFound": "Không tìm thấy bài này, hoặc bạn không có quyền xem.",
+    "cannotEdit": "Bạn không phải tác giả của bài này.",
+    "authors": "Tác giả",
+    "authorsHint": "Tên đăng nhập của người ra đề (setter trở lên). Nhấn Enter sau mỗi tên.",
+    "saveAuthors": "Lưu tác giả",
+    "authorsSaved": "Đã cập nhật tác giả.",
+    "edit": "Sửa bài",
+    "editTitle": "Sửa bài",
+    "backToProblem": "Về trang đề",
+    "code": "Mã bài",
+    "codeHint": "2–32 ký tự: chữ thường không dấu, chữ số, dấu gạch dưới. Không đổi được sau khi tạo.",
+    "codeFormat": "Chỉ gồm 2–32 chữ thường không dấu, chữ số hoặc dấu gạch dưới",
+    "name": "Tên bài",
+    "timeLimit": "Giới hạn thời gian",
+    "memoryLimit": "Giới hạn bộ nhớ",
+    "secondsUnit": "giây",
+    "timeRange": "Từ 0,1 đến 20 giây",
+    "memoryRange": "Từ 16 đến 2048 MB",
+    "visibility": "Chế độ",
+    "visibilityAdminOnly": "Chỉ quản trị viên mới công khai hoặc ẩn bài được.",
+    "statement": "Đề bài (Markdown)",
+    "statementHint": "Công thức: $a+b$ hoặc $$\\sum a_i$$. Ví dụ mẫu: đặt trong khối ``` để có nút copy. Dán hoặc kéo-thả ảnh vào đây để tải lên.",
+    "write": "Soạn",
+    "preview": "Xem trước",
+    "noStatement": "Chưa có nội dung đề.",
+    "insertImage": "Chèn ảnh",
+    "unsaved": "Có thay đổi chưa lưu",
+    "saved": "Đã lưu bài.",
+    "deleteTitle": "Xóa bài",
+    "deleteHint": "Xóa vĩnh viễn bài này cùng toàn bộ dữ liệu liên quan.",
+    "delete": "Xóa bài",
+    "deleteConfirm": "Bạn chắc chắn muốn xóa vĩnh viễn bài {{code}}? Không thể hoàn tác.",
+    "deleted": "Đã xóa bài {{code}}."
+  },
+  "markdown": {
+    "copy": "Sao chép",
+    "copied": "Đã sao chép"
   }
 }

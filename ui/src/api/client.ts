@@ -17,14 +17,16 @@ export class ApiError extends Error {
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
 
 export async function api<T>(path: string, options: { method?: Method; body?: unknown } = {}): Promise<T> {
+  const isForm = options.body instanceof FormData
   let res: Response
   try {
     res = await fetch(`/api${path}`, {
       method: options.method ?? 'GET',
       // Same origin through nginx, so the session cookie is sent automatically.
       credentials: 'same-origin',
-      headers: options.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      // FormData sets its own multipart Content-Type (with the boundary).
+      headers: options.body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : undefined,
+      body: options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),
     })
   } catch {
     throw new ApiError(0, 'network')

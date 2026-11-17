@@ -1,5 +1,12 @@
 reference/
 
+# Runtime data (uploads, later test data). The directories are kept so a fresh clone
+# creates them owned by you, not by root via Docker.
+data/*
+!data/media/
+data/media/*
+!data/media/.gitkeep
+
 # Local configuration
 .env
 

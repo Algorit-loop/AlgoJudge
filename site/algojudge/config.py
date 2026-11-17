@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     login_max_failures: int = 10
     login_failure_window_seconds: int = 15 * 60
 
+    # --- Uploaded files (problem statement images) ---
+    # Written by the API, served read-only by nginx at media_url.
+    media_dir: str = "/data/media"
+    media_url: str = "/media/"
+    max_image_bytes: int = 5 * 1024 * 1024
+
 
 @lru_cache
 def get_settings() -> Settings:

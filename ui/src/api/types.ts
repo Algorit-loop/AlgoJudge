@@ -28,3 +28,25 @@ export interface AdminUserView extends Me {
   is_active: boolean
   last_login_at: string | null
 }
+
+export type Visibility = 'public' | 'private'
+
+export interface ProblemSummary {
+  code: string
+  title: string
+  time_limit_ms: number
+  memory_limit_kb: number
+  visibility: Visibility
+  created_at: string
+}
+
+export interface ProblemDetail extends ProblemSummary {
+  statement_md: string
+  updated_at: string
+  authors: PublicUser[]
+  can_edit: boolean
+  can_change_visibility: boolean
+}
+
+/** Setters and above may create problems. */
+export const canCreateProblems = (role: Role) => RANK[role] >= RANK.setter

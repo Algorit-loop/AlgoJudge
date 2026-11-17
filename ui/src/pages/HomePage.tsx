@@ -1,10 +1,11 @@
-import { Button, Card, Container, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import { Anchor, Button, Card, Container, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
 import { IconFileCode, IconInbox, IconListNumbers, IconTrophy } from '@tabler/icons-react'
 import type { ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import { useMe } from '../api/auth'
+import { useProblemList } from '../api/problems'
 import classes from './HomePage.module.css'
 
 function Feature({ icon: Icon, title, text }: { icon: ComponentType<{ size?: number }>; title: string; text: string }) {
@@ -30,6 +31,34 @@ function EmptyPanel({ title, text }: { title: string; text: string }) {
       <Stack align="center" gap={6} py="xl" c="dimmed">
         <IconInbox size={32} stroke={1.5} />
         <Text size="sm">{text}</Text>
+      </Stack>
+    </Card>
+  )
+}
+
+function NewProblems() {
+  const { t } = useTranslation()
+  const { data } = useProblemList({ sort: 'newest', pageSize: 6 })
+  if (!data || data.items.length === 0) return <EmptyPanel title={t('home.newProblems')} text={t('home.noProblems')} />
+  return (
+    <Card withBorder padding="lg">
+      <Group justify="space-between" mb="sm">
+        <Title order={4}>{t('home.newProblems')}</Title>
+        <Anchor component={Link} to="/problems" size="sm">
+          {t('home.viewAll')}
+        </Anchor>
+      </Group>
+      <Stack gap={0}>
+        {data.items.map((p) => (
+          <Group key={p.code} justify="space-between" wrap="nowrap" py={8} className={classes.row}>
+            <Anchor component={Link} to={`/problems/${p.code}`} fw={500} truncate>
+              {p.title}
+            </Anchor>
+            <Text size="xs" c="dimmed" ff="monospace">
+              {p.code}
+            </Text>
+          </Group>
+        ))}
       </Stack>
     </Card>
   )
@@ -88,7 +117,7 @@ export function HomePage() {
 
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg" mt="lg">
           <EmptyPanel title={t('home.upcomingContests')} text={t('home.noContests')} />
-          <EmptyPanel title={t('home.newProblems')} text={t('home.noProblems')} />
+          <NewProblems />
         </SimpleGrid>
       </Container>
     </>
