@@ -6,6 +6,12 @@ data/*
 !data/media/
 data/media/*
 !data/media/.gitkeep
+!data/postgres/
+data/postgres/*
+!data/postgres/.gitkeep
+!data/redis/
+data/redis/*
+!data/redis/.gitkeep
 
 # Local configuration
 .env

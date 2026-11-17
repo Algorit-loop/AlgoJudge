@@ -1,8 +1,38 @@
-# AlgoJudge — development stack.  Usage: `docker compose up --build`, then open http://localhost:${HTTP_PORT:-8080}
+# AlgoJudge — development stack.  First time: `./scripts/init.sh`, then `docker compose up -d --build`.
+# Open http://localhost:${HTTP_PORT:-8080}
 # Only nginx publishes a port on the host; everything else talks over the internal Docker network.
+#
+# Data: everything lives under ./data/ in the repo as plain files (no Docker named volumes), so removing
+# containers, volumes, images or reinstalling Docker never touches it. Every directory in ./data/ belongs to
+# a service user, not to your account, so `rm -rf`, `git clean -x` or a stray overwrite are refused; deleting
+# data on purpose needs sudo. Owners:
+#   data/postgres/pgdata  uid 70     postgres image's own user (the image fixes ownership itself)
+#   data/redis            uid 999    redis image's own user, mode fixed by `data-init`
+#   data/media            uid 10001  the app (api; later Celery), set by `data-init`
+#   data/backups          uid 70     written by pg_dump inside the postgres container, set by `data-init`
 name: algojudge
 
 services:
+  # One-shot, runs as root before the app starts: creates the data directories the images do not manage
+  # themselves and gives them to their service user. Safe to run any number of times.
+  data-init:
+    image: alpine:3.22
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /data/media /data/backups /data/redis
+        chown -R 10001:10001 /data/media
+        chown -R 70:70 /data/backups
+        # The redis image only changes the owner, and its group (gid 1000) is often the host user's group:
+        # a git-created 775 directory would stay group-writable, i.e. deletable by your account.
+        chown -R 999:999 /data/redis
+        chmod 755 /data/media /data/backups /data/redis
+    volumes:
+      - ./data:/data
+    restart: "no"
+
   nginx:
     image: nginx:1.29-alpine
     ports:
@@ -20,16 +50,26 @@ services:
     build: ./site
     # Apply database migrations, then start the API with auto-reload.
     command: ["sh", "-c", "alembic upgrade head && exec uvicorn algojudge.main:app --host 0.0.0.0 --port 8000 --reload"]
-    # Run as the host user so files created in ./site (e.g. new migrations) are not owned by root.
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    # A dedicated app user, NOT your account: it owns data/media, so your account cannot delete uploads by accident.
+    # It only reads ./site. To write into ./site from the container (e.g. a new migration), run the command as
+    # yourself: `docker compose exec --user "$(id -u):$(id -g)" api alembic revision ...` (see README).
+    user: "10001:10001"
+    # App settings (REGISTRATION_OPEN, SESSION_COOKIE_SECURE, ...) come from .env; the variables below win.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-algojudge}:${POSTGRES_PASSWORD:-algojudge}@postgres:5432/${POSTGRES_DB:-algojudge}
       REDIS_URL: redis://redis:6379/0
+      # ./site is read-only for the app user, so tools must not try to write caches there.
+      RUFF_NO_CACHE: "true"
     volumes:
       - ./site:/app
       # Uploaded files (statement images); nginx serves them at /media/.
       - ./data/media:/data/media
     depends_on:
+      data-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -45,14 +85,22 @@ services:
       - /app/node_modules
     restart: unless-stopped
 
+  # Starts as root, hands ./data/postgres/pgdata to its own `postgres` user (uid 70), then drops privileges.
   postgres:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-algojudge}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-algojudge}
       POSTGRES_DB: ${POSTGRES_DB:-algojudge}
+      # A subdirectory, because initdb needs an empty directory and ./data/postgres holds .gitkeep.
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
+      # Backups: `pg_dump -f /backups/...` lands in ./data/backups (see README).
+      - ./data/backups:/backups
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -60,17 +108,17 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Starts as root, hands ./data/redis to its own `redis` user (uid 999), then drops privileges.
   redis:
     image: redis:7-alpine
     volumes:
-      - redis-data:/data
+      - ./data/redis:/data
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
-
-volumes:
-  postgres-data:
-  redis-data:

@@ -4,12 +4,19 @@ Hệ thống chấm bài lập trình kiểu OJ + DOMjudge, dùng máy chấm VN
 
 ## Chạy môi trường phát triển
 
-Cần Docker và Docker Compose v2.
+Cần Docker và Docker Compose v2, và tài khoản nằm trong nhóm `docker`.
 
 ```bash
-cp .env.example .env        # không bắt buộc, mọi giá trị đều có mặc định
-docker compose up -d --build
+./scripts/init.sh             # tạo data/, tạo .env từ .env.example, giao quyền thư mục dữ liệu
+docker compose up -d --build  # hoặc gộp hai bước: ./scripts/init.sh --start
 ```
+
+`scripts/init.sh` chạy lại bao nhiêu lần cũng được: không ghi đè file cấu hình đã có, không xóa dữ liệu. Nó làm ba việc:
+- Tạo các thư mục `data/postgres`, `data/redis`, `data/media`, `data/backups` nếu chưa có.
+- Với mỗi file mẫu `<tên>.example` trong git, tạo file cấu hình chính `<tên>` nếu chưa có (hiện chỉ có `.env`). `.env` mới được đặt `POSTGRES_PASSWORD` ngẫu nhiên nếu CSDL chưa được tạo. Nếu `.env` đã có mà file mẫu có thêm biến mới, biến mới được nối vào cuối `.env`.
+- Giao các thư mục dữ liệu cho user của từng service (xem mục "Dữ liệu và sao lưu").
+
+Cấu hình nằm trong `.env`, không sửa `.env.example`. Sửa xong chạy `docker compose up -d` để áp dụng.
 
 Mở <http://localhost:8080>. Trang chủ hiện trạng thái API, CSDL và Redis.
 
@@ -44,11 +51,39 @@ docker compose exec api python -m algojudge.cli --help
 ```bash
 docker compose logs -f api                           # xem log
 docker compose exec api pytest                       # test site (dùng CSDL riêng algojudge_test, Redis db 15)
-docker compose exec api alembic revision --autogenerate -m "..."   # tạo migration sau khi sửa model
+docker compose exec --user "$(id -u):$(id -g)" api alembic revision --autogenerate -m "..."   # tạo migration (chạy bằng UID của bạn để file thuộc về bạn)
 docker compose exec api ruff check .                 # lint site
 docker compose exec ui npm run typecheck             # kiểm tra kiểu ui
-docker compose down                                  # dừng (giữ dữ liệu)
-docker compose down -v                               # dừng và XÓA dữ liệu CSDL/Redis (file trong data/ vẫn còn)
+docker compose down                                  # dừng (dữ liệu trong data/ vẫn còn)
+```
+
+## Dữ liệu và sao lưu
+
+Mọi dữ liệu nằm trong `data/` của repo dưới dạng file thật, không dùng volume của Docker. Xóa container, `docker compose down -v`, xóa image hay cài lại Docker đều không ảnh hưởng tới `data/`.
+
+**Dữ liệu được bảo vệ khỏi xóa nhầm.** Mỗi thư mục trong `data/` thuộc về user của service ghi vào nó, không phải tài khoản của bạn. Vì vậy `rm -rf`, `git clean -x` hay ghi đè nhầm đều bị từ chối, muốn xóa phải dùng `sudo`. Bạn vẫn đọc được `media/`, `redis/` và `backups/` (để chép bản sao lưu đi nơi khác).
+
+| Thư mục | Chủ sở hữu | Ai giao quyền |
+|---|---|---|
+| `data/postgres/pgdata/` | UID 70 (`postgres` trong image) | Image PostgreSQL, mỗi lần khởi động |
+| `data/redis/` | UID 999 (`redis` trong image) | Service `data-init` |
+| `data/media/` | UID 10001 (user của ứng dụng, service `api`) | Service `data-init` |
+| `data/backups/` | UID 70 (bản dump do `pg_dump` trong container ghi) | Service `data-init` |
+
+`data-init` là service chạy một lần bằng root trước khi `api` và `postgres` khởi động. `scripts/init.sh` cũng gọi nó.
+Lưu ý: tài khoản nằm trong nhóm `docker` vẫn có thể dùng Docker để xóa, nên đây là lớp chống tai nạn, không phải lớp bảo mật. Lớp này cũng không cứu được khi hỏng ổ đĩa, nên hãy chép bản sao lưu ra máy khác.
+
+```bash
+# Sao lưu (không cần sudo, chạy được khi site đang chạy). File nằm ở data/backups/
+docker compose exec -T -u postgres postgres pg_dump -U algojudge -d algojudge -f /backups/$(date +%F).sql
+# Khôi phục vào CSDL đang chạy
+docker compose exec -T -u postgres postgres psql -U algojudge -d algojudge -f /backups/YYYY-MM-DD.sql
+# Xóa một bản sao lưu cũ
+docker compose exec -T postgres rm /backups/YYYY-MM-DD.sql
+# Chép nguyên thư mục data/ (phải dừng trước, chép lúc đang chạy có thể hỏng CSDL)
+docker compose stop && sudo cp -a data ../algojudge-data-$(date +%F) && docker compose start
+# Xóa CSDL có chủ đích để làm lại từ đầu (cần sudo)
+docker compose stop postgres && sudo rm -rf data/postgres/pgdata && docker compose up -d
 ```
 
 Thêm gói Python: sửa `site/pyproject.toml`, chạy `uv lock` (hoặc qua image `ghcr.io/astral-sh/uv`), rồi `docker compose up -d --build api`.
@@ -64,7 +99,11 @@ ui/             React + TypeScript + Mantine + i18next (Vite)
 judge-server/   Máy chấm VNOJ (dmoj judge-server), source đưa vào repo
 deploy/nginx/   Cấu hình nginx
 scripts/        Script tiện ích (create-superadmin.sh)
-data/media/     File được upload (ảnh trong đề). Không đưa vào git, nginx phục vụ ở /media/
+data/           Mọi dữ liệu lúc chạy, không đưa vào git:
+  postgres/     CSDL PostgreSQL (trong pgdata/)
+  redis/        Redis (phiên đăng nhập, cache)
+  media/        File được upload (ảnh trong đề), nginx phục vụ ở /media/
+  backups/      Nơi đặt các file sao lưu
 compose.yaml    Docker Compose cho môi trường phát triển
 DESIGN.md       Tài liệu thiết kế
 ```
