@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from algojudge.api import auth, health, problems, users
+from algojudge.api import auth, catalog, health, problems, users
 from algojudge.api.errors import install_error_handlers
 from algojudge.deps import close_connections
 
@@ -27,3 +27,4 @@ app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(problems.router, prefix="/api")
+app.include_router(catalog.router, prefix="/api")

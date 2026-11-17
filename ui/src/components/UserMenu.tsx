@@ -1,6 +1,6 @@
 import { Avatar, Group, Menu, Text, UnstyledButton } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconChevronDown, IconLogout, IconUser, IconUsers } from '../icons'
+import { IconCategory, IconChevronDown, IconLogout, IconUser, IconUsers } from '../icons'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router'
 
@@ -54,9 +54,14 @@ export function UserMenu({ user }: { user: Me }) {
           {t('nav.profile')}
         </Menu.Item>
         {isAdmin(user.role) && (
-          <Menu.Item component={Link} to="/admin/users" leftSection={<IconUsers size={16} />}>
-            {t('nav.adminUsers')}
-          </Menu.Item>
+          <>
+            <Menu.Item component={Link} to="/admin/users" leftSection={<IconUsers size={16} />}>
+              {t('nav.adminUsers')}
+            </Menu.Item>
+            <Menu.Item component={Link} to="/admin/catalog" leftSection={<IconCategory size={16} />}>
+              {t('nav.adminCatalog')}
+            </Menu.Item>
+          </>
         )}
         <Menu.Divider />
         <Menu.Item color="red" leftSection={<IconLogout size={16} />} onClick={onLogout} disabled={logout.isPending}>

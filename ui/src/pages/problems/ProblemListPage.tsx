@@ -8,36 +8,62 @@ import {
   Group,
   Pagination,
   SegmentedControl,
+  Select,
   Stack,
   Table,
   Text,
   TextInput,
   Title,
+  UnstyledButton,
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconAlertCircle, IconLock, IconPlus, IconSearch } from '../../icons'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 
 import { useMe } from '../../api/auth'
+import { useCatalog } from '../../api/catalog'
 import { errorCode } from '../../api/client'
-import { useProblemList } from '../../api/problems'
+import { type ProblemListParams, useProblemList } from '../../api/problems'
 import { canCreateProblems } from '../../api/types'
-import { formatMegabytes, formatSeconds } from '../../format'
+import { IconAlertCircle, IconLock, IconPlus, IconSearch } from '../../icons'
 
 const PAGE_SIZE = 50
+type Sort = NonNullable<ProblemListParams['sort']>
+const pointsFormat = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 })
 
 export function ProblemListPage() {
   const { t } = useTranslation()
   const { data: me } = useMe()
-  const [search, setSearch] = useState('')
+  // Filters live in the URL so they survive reloads and can be linked to (e.g. from a problem's type badge).
+  const [params, setParams] = useSearchParams()
+  const group = params.get('group')
+  const type = params.get('type')
+  const sort = (['code', 'newest', 'points'].includes(params.get('sort') ?? '') ? params.get('sort') : 'code') as Sort
+  const [search, setSearch] = useState(params.get('q') ?? '')
   const [q] = useDebouncedValue(search.trim(), 300)
   const [scope, setScope] = useState<'all' | 'mine'>('all')
   const [page, setPage] = useState(1)
   const canCreate = !!me && canCreateProblems(me.role)
-  const list = useProblemList({ q, mine: canCreate && scope === 'mine', page, pageSize: PAGE_SIZE })
+  const groups = useCatalog('problem-groups')
+  const types = useCatalog('problem-types')
+  const list = useProblemList({ q, group, type, sort, mine: canCreate && scope === 'mine', page, pageSize: PAGE_SIZE })
   const total = list.data?.total ?? 0
+
+  const setParam = (key: string, value: string | null) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    setParams(next, { replace: true })
+    setPage(1)
+  }
+
+  const sortHeader = (key: Sort, label: string) => (
+    <UnstyledButton onClick={() => setParam('sort', key === 'code' ? null : key)} fw={sort === key ? 700 : 600} fz="sm">
+      {label}
+      {sort === key ? ' ↓' : ''}
+    </UnstyledButton>
+  )
 
   return (
     <Container size="lg" py="xl">
@@ -61,7 +87,25 @@ export function ProblemListPage() {
               setPage(1)
             }}
             style={{ flex: 1 }}
-            miw={240}
+            miw={220}
+          />
+          <Select
+            placeholder={t('problems.allGroups')}
+            data={(groups.data ?? []).map((x) => ({ value: x.slug, label: x.name }))}
+            value={group}
+            onChange={(v) => setParam('group', v)}
+            clearable
+            searchable
+            w={190}
+          />
+          <Select
+            placeholder={t('problems.allTypes')}
+            data={(types.data ?? []).map((x) => ({ value: x.slug, label: x.name }))}
+            value={type}
+            onChange={(v) => setParam('type', v)}
+            clearable
+            searchable
+            w={190}
           />
           {canCreate && (
             <SegmentedControl
@@ -85,17 +129,15 @@ export function ProblemListPage() {
         )}
 
         <Card withBorder padding={0}>
-          <Table.ScrollContainer minWidth={560}>
+          <Table.ScrollContainer minWidth={720}>
             <Table verticalSpacing="sm" highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th w={160}>{t('problems.colCode')}</Table.Th>
+                  <Table.Th w={150}>{sortHeader('code', t('problems.colCode'))}</Table.Th>
                   <Table.Th>{t('problems.colTitle')}</Table.Th>
-                  <Table.Th w={110} ta="right">
-                    {t('problems.colTime')}
-                  </Table.Th>
-                  <Table.Th w={120} ta="right">
-                    {t('problems.colMemory')}
+                  <Table.Th w={170}>{t('problems.group')}</Table.Th>
+                  <Table.Th w={90} ta="right">
+                    {sortHeader('points', t('problems.points'))}
                   </Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -117,7 +159,7 @@ export function ProblemListPage() {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Group gap="xs" wrap="nowrap">
+                        <Group gap={6}>
                           <Anchor component={Link} to={`/problems/${p.code}`} fw={500}>
                             {p.title}
                           </Anchor>
@@ -126,13 +168,37 @@ export function ProblemListPage() {
                               {t('problems.private')}
                             </Badge>
                           )}
+                          {p.types.map((x) => (
+                            <Badge
+                              key={x.id}
+                              size="xs"
+                              variant="outline"
+                              color="gray"
+                              tt="none"
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => setParam('type', x.slug)}
+                            >
+                              {x.name}
+                            </Badge>
+                          ))}
                         </Group>
                       </Table.Td>
-                      <Table.Td ta="right">
-                        <Text size="sm">{t('problems.secondsShort', { value: formatSeconds(p.time_limit_ms) })}</Text>
+                      <Table.Td>
+                        {p.group && (
+                          <Anchor size="sm" c="dimmed" onClick={() => setParam('group', p.group?.slug ?? null)}>
+                            {p.group.name}
+                          </Anchor>
+                        )}
                       </Table.Td>
                       <Table.Td ta="right">
-                        <Text size="sm">{t('problems.megabytesShort', { value: formatMegabytes(p.memory_limit_kb) })}</Text>
+                        <Text size="sm" fw={500}>
+                          {pointsFormat.format(p.points)}
+                          {p.scoring_mode === 'partial' && (
+                            <Text span c="dimmed" size="xs" title={t('problems.scoring.partial')}>
+                              {' '}p
+                            </Text>
+                          )}
+                        </Text>
                       </Table.Td>
                     </Table.Tr>
                   ))
@@ -140,7 +206,7 @@ export function ProblemListPage() {
                   <Table.Tr>
                     <Table.Td colSpan={4}>
                       <Text ta="center" c="dimmed" py="md">
-                        {q ? t('problems.noMatch') : t('problems.empty')}
+                        {q || group || type ? t('problems.noMatch') : t('problems.empty')}
                       </Text>
                     </Table.Td>
                   </Table.Tr>

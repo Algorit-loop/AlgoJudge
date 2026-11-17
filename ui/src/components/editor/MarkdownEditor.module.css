@@ -1,0 +1,111 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.frame,
+.fullscreen {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-body);
+  overflow: hidden;
+}
+
+.frame:focus-within {
+  border-color: var(--mantine-primary-color-filled);
+}
+
+.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  border-radius: 0;
+  border: none;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-7));
+}
+
+/* Formatting buttons stay on one row and scroll sideways when the editor is narrow. */
+.tools {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.right {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Phones: view switch / fullscreen / help on their own row above the formatting buttons. */
+@media (max-width: 48em) {
+  .right {
+    order: -1;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .tools {
+    flex-basis: 100%;
+  }
+}
+
+.body {
+  display: flex;
+  min-height: 0;
+}
+
+.fullscreen .body {
+  flex: 1;
+}
+
+.source,
+.preview {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.body[data-mode='split'] .source {
+  border-right: 1px solid var(--mantine-color-default-border);
+}
+
+.codemirror {
+  height: 100%;
+}
+
+.preview {
+  padding: 16px 20px;
+}
+
+.status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--mantine-color-default-border);
+  background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-7));
+}

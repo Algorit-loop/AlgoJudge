@@ -27,6 +27,8 @@ from algojudge.config import get_settings  # noqa: E402
 from algojudge.deps import close_connections, get_engine, get_redis  # noqa: E402
 from algojudge.main import app  # noqa: E402
 
+_LANGUAGES: list[dict] = []
+
 
 @pytest.fixture(scope="session", autouse=True)
 async def _database():
@@ -40,6 +42,10 @@ async def _database():
     cfg.attributes["url"] = os.environ["DATABASE_URL"]
     # Alembic's env.py runs its own event loop, so run it in a worker thread.
     await asyncio.to_thread(command.upgrade, cfg, "head")
+    # The migration seeds the language list; keep a copy to restore it before every test.
+    async with get_engine().connect() as conn:
+        rows = (await conn.execute(text("SELECT key, name, ext, is_enabled, sort_order FROM languages"))).mappings()
+        _LANGUAGES[:] = [dict(r) for r in rows]
     yield
     await close_connections()
 
@@ -47,7 +53,16 @@ async def _database():
 @pytest.fixture(autouse=True)
 async def _clean_state():
     async with get_engine().begin() as conn:
-        await conn.execute(text("TRUNCATE users, problems RESTART IDENTITY CASCADE"))
+        await conn.execute(
+            text("TRUNCATE users, problems, problem_types, problem_groups, languages RESTART IDENTITY CASCADE")
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO languages (key, name, ext, is_enabled, sort_order) "
+                "VALUES (:key, :name, :ext, :is_enabled, :sort_order)"
+            ),
+            _LANGUAGES,
+        )
     await get_redis().flushdb()
     yield
     app.dependency_overrides.clear()

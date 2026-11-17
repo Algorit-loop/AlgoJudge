@@ -39,8 +39,9 @@ async def test_setter_creates_private_problem_and_is_author(setter):
     assert r.status_code == 201, r.text
     p = r.json()
     assert p["code"] == "aplusb" and p["visibility"] == "private"
-    assert [a["username"] for a in p["authors"]] == ["setter1"]
-    assert p["can_edit"] is True and p["can_change_visibility"] is False
+    assert [a["username"] for a in p["creators"]] == ["setter1"]
+    assert p["can_edit"] is True and p["can_change_visibility"] is False and p["can_delete"] is False
+    assert p["points"] == 100 and p["scoring_mode"] == "icpc" and p["testcase_visibility"] == "staff_only"
     assert p["time_limit_ms"] == 2000 and p["memory_limit_kb"] == 65536
 
 
@@ -94,19 +95,125 @@ async def test_author_edits_and_non_author_cannot(setter, setter2, admin):
     assert (await admin.patch("/api/problems/aplusb", json={"title": "Admin sửa"})).status_code == 200
 
 
-async def test_invite_coauthor(setter, setter2, user):
+async def _members(client, creators, curators=(), testers=()):
+    body = {"creators": list(creators), "curators": list(curators), "testers": list(testers)}
+    return await client.put("/api/problems/aplusb/members", json=body)
+
+
+async def test_members_roles(setter, setter2, user, new_client):
     await _create(setter)
-    r = await setter.put("/api/problems/aplusb/authors", json={"usernames": ["setter1", "SETTER2"]})
-    assert r.status_code == 200
-    assert [a["username"] for a in r.json()["authors"]] == ["setter1", "setter2"]
-    # The invited setter can now see and edit the private problem.
-    assert (await setter2.patch("/api/problems/aplusb", json={"title": "Cùng sửa"})).status_code == 200
-    # Regular users cannot be authors; unknown names and empty lists are refused.
-    r = await setter.put("/api/problems/aplusb/authors", json={"usernames": ["setter1", "user1"]})
-    assert r.status_code == 400 and r.json()["detail"] == {"code": "author_must_be_setter", "field": "user1"}
-    r = await setter.put("/api/problems/aplusb/authors", json={"usernames": ["ghost"]})
-    assert r.status_code == 400 and r.json()["detail"] == {"code": "user_not_found", "field": "ghost"}
-    assert (await setter.put("/api/problems/aplusb/authors", json={"usernames": []})).status_code == 400
+    r = await _members(setter, ["setter1"], curators=["SETTER2"], testers=["user1"])
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [u["username"] for u in body["creators"]] == ["setter1"]
+    assert [u["username"] for u in body["curators"]] == ["setter2"]
+    assert [u["username"] for u in body["testers"]] == ["user1"]
+    # Curator edits; tester sees the private problem but cannot edit it.
+    assert (await setter2.patch("/api/problems/aplusb", json={"title": "Curator sửa"})).status_code == 200
+    r = await user.get("/api/problems/aplusb")
+    assert r.status_code == 200 and r.json()["can_edit"] is False
+    assert (await user.patch("/api/problems/aplusb", json={"title": "x"})).status_code == 403
+    # Only creators are credited on the public page.
+    assert [u["username"] for u in r.json()["creators"]] == ["setter1"]
+    assert "curators" not in r.json()
+
+
+async def test_members_validation(setter, setter2, user):
+    await _create(setter)
+    r = await _members(setter, ["setter1"], curators=["user1"])
+    assert r.status_code == 400 and r.json()["detail"] == {"code": "editor_must_be_setter", "field": "user1"}
+    r = await _members(setter, ["setter1"], testers=["ghost"])
+    assert r.json()["detail"] == {"code": "user_not_found", "field": "ghost"}
+    r = await _members(setter, ["setter1"], curators=["setter2"], testers=["setter2"])
+    assert r.json()["detail"]["code"] == "member_in_two_roles"
+    r = await _members(setter, [], curators=["setter1"])
+    assert r.json()["detail"]["code"] == "creators_required"
+    # A non-admin editor cannot drop their own edit access.
+    r = await _members(setter, ["setter2"], testers=["setter1"])
+    assert r.status_code == 400 and r.json()["detail"]["code"] == "cannot_remove_self"
+
+
+async def test_settings_and_metadata(setter, admin):
+    await _create(setter)
+    g = (await admin.post("/api/problem-groups", json={"slug": "voi", "name": "VOI"})).json()
+    t1 = (await admin.post("/api/problem-types", json={"slug": "dp", "name": "Quy hoạch động"})).json()
+    t2 = (await admin.post("/api/problem-types", json={"slug": "graph", "name": "Đồ thị"})).json()
+    body = {
+        "points": 250.5,
+        "scoring_mode": "partial",
+        "group_id": g["id"],
+        "type_ids": [t1["id"], t2["id"]],
+        "language_keys": ["CPP17", "PY3"],
+        "source_visibility": "only_own",
+        "testcase_visibility": "outside_contest",
+        "testcase_result_visibility": "groups_only",
+        "published_at": "2026-12-01T00:00:00Z",
+    }
+    r = await setter.patch("/api/problems/aplusb", json=body)
+    assert r.status_code == 200, r.text
+    p = r.json()
+    assert p["points"] == 250.5 and p["scoring_mode"] == "partial"
+    assert p["group"]["slug"] == "voi"
+    assert sorted(t["slug"] for t in p["types"]) == ["dp", "graph"]
+    assert [lang["key"] for lang in p["allowed_languages"]] == ["CPP17", "PY3"]
+    assert p["source_visibility"] == "only_own" and p["testcase_visibility"] == "outside_contest"
+    assert p["testcase_result_visibility"] == "groups_only"
+    assert p["published_at"].startswith("2026-12-01")
+    # Settings are editors-only; the public detail hides the policies.
+    assert (await setter.get("/api/problems/aplusb/settings")).status_code == 200
+    # Clearing the group.
+    assert (await setter.patch("/api/problems/aplusb", json={"group_id": None})).json()["group"] is None
+    # Validation.
+    assert (await setter.patch("/api/problems/aplusb", json={"language_keys": []})).json()["detail"]["code"] == (
+        "languages_required"
+    )
+    r = await setter.patch("/api/problems/aplusb", json={"language_keys": ["NOPE"]})
+    assert r.json()["detail"]["code"] == "language_not_found"
+    assert (await setter.patch("/api/problems/aplusb", json={"points": 0})).status_code == 422
+    # Filters.
+    await admin.patch("/api/problems/aplusb", json={"visibility": "public", "group_id": g["id"]})
+    assert (await admin.get("/api/problems", params={"group": "voi"})).json()["total"] == 1
+    assert (await admin.get("/api/problems", params={"type": "dp"})).json()["total"] == 1
+    assert (await admin.get("/api/problems", params={"type": "greedy"})).json()["total"] == 0
+
+
+async def test_new_problem_gets_enabled_languages(setter):
+    p = (await _create(setter)).json()
+    keys = [lang["key"] for lang in p["allowed_languages"]]
+    assert "CPP17" in keys and "PY3" in keys and "PY2" not in keys
+
+
+async def test_publishing_sets_published_at(setter, admin):
+    p = (await _create(setter)).json()
+    assert p["published_at"] is None
+    r = await admin.patch("/api/problems/aplusb", json={"visibility": "public"})
+    assert r.json()["published_at"] is not None
+    # The editor sends every field; an explicit null date on a public problem is filled in again.
+    r = await admin.patch("/api/problems/aplusb", json={"visibility": "public", "published_at": None})
+    assert r.json()["published_at"] is not None
+
+
+async def test_solution(client, setter, admin, user):
+    await _create(setter)
+    await admin.patch("/api/problems/aplusb", json={"visibility": "public"})
+    assert (await client.get("/api/problems/aplusb/solution")).status_code == 404
+    r = await setter.put("/api/problems/aplusb/solution", json={"content_md": "Dùng $a+b$.", "is_public": False})
+    assert r.status_code == 200 and r.json()["is_visible"] is False
+    # Hidden from normal users until public.
+    assert (await user.get("/api/problems/aplusb/solution")).status_code == 404
+    assert (await user.get("/api/problems/aplusb")).json()["has_solution"] is False
+    # Public but scheduled in the future: still hidden.
+    body = {"content_md": "Dùng $a+b$.", "is_public": True, "publish_at": "2999-01-01T00:00:00Z"}
+    await setter.put("/api/problems/aplusb/solution", json=body)
+    assert (await user.get("/api/problems/aplusb/solution")).status_code == 404
+    # Public now: visible.
+    await setter.put("/api/problems/aplusb/solution", json={"content_md": "Dùng $a+b$.", "is_public": True})
+    r = await user.get("/api/problems/aplusb/solution")
+    assert r.status_code == 200 and r.json()["content_md"] == "Dùng $a+b$."
+    assert (await user.get("/api/problems/aplusb")).json()["has_solution"] is True
+    assert (await user.put("/api/problems/aplusb/solution", json={"content_md": "x"})).status_code == 403
+    assert (await setter.delete("/api/problems/aplusb/solution")).status_code == 204
+    assert (await user.get("/api/problems/aplusb/solution")).status_code == 404
 
 
 async def test_list_search_mine_and_sort(setter, setter2, admin):
@@ -117,6 +224,10 @@ async def test_list_search_mine_and_sort(setter, setter2, admin):
     assert [p["code"] for p in r["items"]] == ["aaa", "bbb", "ccc"]
     r = (await admin.get("/api/problems", params={"sort": "newest"})).json()
     assert [p["code"] for p in r["items"]] == ["ccc", "aaa", "bbb"]
+    # A published problem sorts by its publish date.
+    await admin.patch("/api/problems/bbb", json={"published_at": "2030-01-01T00:00:00Z"})
+    r = (await admin.get("/api/problems", params={"sort": "newest"})).json()
+    assert [p["code"] for p in r["items"]] == ["bbb", "ccc", "aaa"]
     r = (await admin.get("/api/problems", params={"q": "đường"})).json()
     assert [p["code"] for p in r["items"]] == ["bbb"]
     r = (await setter.get("/api/problems", params={"mine": "true"})).json()

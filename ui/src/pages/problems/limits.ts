@@ -5,3 +5,4 @@ export const PROBLEM_CODE_RE = /^[a-z0-9_]{2,32}$/
 
 export const secondsToMs = (s: number) => Math.round(s * 1000)
 export const mbToKb = (mb: number) => Math.round(mb * 1024)
+export const POINTS = { min: 0.01, max: 1000 }

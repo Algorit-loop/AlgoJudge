@@ -1,14 +1,16 @@
 import 'katex/dist/katex.min.css'
 
 import { ActionIcon, CopyButton, Tooltip } from '@mantine/core'
-import { IconCheck, IconCopy } from '../icons'
 import type { ComponentPropsWithoutRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 
+import { IconCheck, IconCopy } from '../icons'
 import classes from './Markdown.module.css'
 
 function textOf(node: unknown): string {
@@ -57,17 +59,42 @@ function Link({ href, children, ...rest }: ComponentPropsWithoutRef<'a'>) {
 
 const components: Components = { pre: Pre, a: Link }
 
-/**
- * remark-math only treats $$...$$ as display math when the $$ fences sit on their own lines.
- * Problem setters usually write `$$ formula $$` on a single line and expect a centred block,
- * so rewrite such lines into the fenced form. Lines inside ``` code blocks are left alone.
- */
-export function normalizeDisplayMath(source: string): string {
+const FENCE = /^\s*(```|~~~)/
+
+/** Apply `fn` to the parts of each line that are outside ``` fences and `inline code`. */
+function mapOutsideCode(source: string, fn: (text: string) => string): string {
   let inFence = false
   return source
     .split('\n')
     .map((line) => {
-      if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
+      if (FENCE.test(line)) {
+        inFence = !inFence
+        return line
+      }
+      if (inFence) return line
+      // Odd-indexed parts are `inline code` spans.
+      return line
+        .split(/(`+[^`]*`+)/)
+        .map((part, i) => (i % 2 === 1 ? part : fn(part)))
+        .join('')
+    })
+    .join('\n')
+}
+
+/**
+ * Normalise the math syntaxes setters actually use into what remark-math understands:
+ * - `~x~` inline math (the DMOJ/VNOJ convention) becomes `$x$`; `~~strike~~` is left alone;
+ * - a line that is only `$$ formula $$` becomes a fenced display block (remark-math needs $$ on their own lines).
+ */
+export function normalizeMath(source: string): string {
+  const tildes = mapOutsideCode(source, (text) =>
+    text.replace(/(?<!~)~(?!~)([^~\n]+?)(?<!~)~(?!~)/g, (_m, math: string) => `$${math}$`),
+  )
+  let inFence = false
+  return tildes
+    .split('\n')
+    .map((line) => {
+      if (FENCE.test(line)) inFence = !inFence
       if (inFence) return line
       const m = /^(\s*)\$\$(.+?)\$\$\s*$/.exec(line)
       return m ? `${m[1]}$$\n${m[1]}${m[2].trim()}\n${m[1]}$$` : line
@@ -75,15 +102,30 @@ export function normalizeDisplayMath(source: string): string {
     .join('\n')
 }
 
+// HTML allowed inside statements: GitHub's safe subset (sup, sub, details, kbd, tables, img...) without scripts,
+// event handlers or javascript: URLs. Math nodes keep the classes rehype-katex needs.
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code ?? []), ['className', /^language-./, 'math-inline', 'math-display']],
+  },
+}
+
 /**
- * Renders problem statements: GitHub-flavoured Markdown + LaTeX ($...$ and $$...$$).
- * Raw HTML in the source is NOT rendered (react-markdown escapes it), so statements cannot inject scripts.
+ * Renders problem statements: GitHub-flavoured Markdown, LaTeX ($...$, ~...~, $$...$$) and a safe HTML subset.
+ * Plugin order matters: math is parsed first, raw HTML is parsed then sanitised, and KaTeX runs last so its own
+ * output is not stripped by the sanitiser.
  */
 export function Markdown({ source }: { source: string }) {
   return (
     <div className={classes.markdown}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={components}>
-        {normalizeDisplayMath(source)}
+      <ReactMarkdown
+        remarkPlugins={[[remarkGfm, { singleTilde: false }], remarkMath]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeKatex]}
+        components={components}
+      >
+        {normalizeMath(source)}
       </ReactMarkdown>
     </div>
   )

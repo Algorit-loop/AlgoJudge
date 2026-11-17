@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     login_max_failures: int = 10
     login_failure_window_seconds: int = 15 * 60
 
+    # --- Problems ---
+    # Who may read others' source code when a problem's source visibility is "default":
+    # "always", "solved" (users who solved the problem) or "only_own".
+    default_source_visibility: str = "solved"
+
     # --- Uploaded files (problem statement images) ---
     # Written by the API, served read-only by nginx at media_url.
     media_dir: str = "/data/media"

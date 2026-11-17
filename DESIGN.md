@@ -109,34 +109,60 @@ Quy ước: mọi bảng có `id BIGSERIAL` trừ khi ghi khác. Thời gian lư
 | created_at | timestamptz | |
 | last_login_at | timestamptz, nullable | |
 
-**languages**: danh sách ngôn ngữ, khớp với tên executor của dmoj
-| Cột | Kiểu | Ghi chú |
-|---|---|---|
-| key | text, **PK** | Tên executor của dmoj, ví dụ `CPP17`, `PY3` |
-| name | text | Tên hiển thị |
-| ext | text | Đuôi file |
-| enabled | bool | Admin bật/tắt |
+**languages**: xem mục 6.2 (đã làm, migration `561a33c4465f`).
 
 ### 6.2 Bài tập và test
 
-**problems** [CHỐT — đã làm ở M2, migration `faaf0ac385e1`]
+#### Tiêu chuẩn một bài tập [CHỐT — yêu cầu của người dùng, 2026-11-17]
+
+> **Mọi bài tập phải có tối thiểu các thành phần sau.** Các việc sau này (test, chấm, kỳ thi, giao diện) đều phải tôn trọng danh sách này. Đây là mức "tiêu chuẩn", không làm sơ sài.
+
+| Thành phần | Cột / bảng | Ý nghĩa |
+|---|---|---|
+| Problem code | `problems.code` | Mã bài, không đổi được sau khi tạo |
+| Problem name | `problems.title` | Tên bài |
+| Date of publishing | `problems.published_at` | Ngày công bố. Tự điền khi công khai mà chưa có. Dùng để sắp xếp "mới nhất" |
+| Creators | `problem_members` role `creator` | Sửa được bài, **được ghi tên tác giả**. Phải là setter trở lên |
+| Curators | `problem_members` role `curator` | Sửa được bài, **không** được ghi tên. Phải là setter trở lên |
+| Testers | `problem_members` role `tester` | Xem được bài khi còn riêng tư, **không** sửa được. Ai cũng được |
+| Submission source visibility | `problems.source_visibility` | `default` (theo cài đặt chung `DEFAULT_SOURCE_VISIBILITY`, mặc định `solved`) / `always` / `solved` / `only_own`. **Áp dụng từ M4** |
+| Testcase visibility | `problems.testcase_visibility` | `staff_only` (mặc định) / `outside_contest` / `always`. **Áp dụng từ M3–M4** |
+| Testcase result visibility | `problems.testcase_result_visibility` | `all` (mặc định) / `groups_only` / `submission_only`. **Áp dụng từ M4** |
+| Problem types | `problem_types` + `problem_type_links` | Dạng bài, nhiều–nhiều (ví dụ Quy hoạch động, Đồ thị). Admin quản lý ở `/admin/catalog` |
+| Problem group | `problem_groups` + `problems.group_id` | Nhóm bài, tối đa một (ví dụ VOI, Luyện tập cơ bản) |
+| Points | `problems.points` | 0,01–1000, mặc định 100 |
+| Scoring mode | `problems.scoring_mode` | `icpc` (dừng ở test sai đầu tiên, đúng hết hoặc 0 điểm, **mặc định**) / `partial` (điểm từng phần). Tương ứng loại 1 và loại 2 ở mục "Cách tính điểm" bên dưới |
+| Time limit, Memory limit | `time_limit_ms`, `memory_limit_kb` | 0,1–20 giây, 16 MB–2 GB |
+| Allowed languages | `languages` + `problem_languages` | Ít nhất một. Bài mới nhận mọi ngôn ngữ đang bật |
+| Solution | `problem_solutions` | Lời giải (editorial) dạng Markdown. Thí sinh thấy khi `is_public` và đã qua `publish_at` |
+
+Ý nghĩa của creator, curator, tester và ba chế độ hiển thị lấy theo VNOJ (`judge/models/problem.py`: `authors`/`curators`/`testers`, `SubmissionSourceAccess`, `ProblemTestcaseAccess`, `ProblemTestcaseResultAccess`), nhưng đặt lại tên giá trị cho dễ đọc.
+
+**problems** [CHỐT — migration `faaf0ac385e1`, `561a33c4465f`]
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
 | id | bigint identity | |
-| code | varchar(32), unique, CHECK `^[a-z0-9_]{2,32}$` | Mã bài, **đồng thời là tên thư mục** `problems/<code>/`. **Không đổi được sau khi tạo** |
+| code | varchar(32), unique, CHECK `^[a-z0-9_]{2,32}$` | Đồng thời là tên thư mục `problems/<code>/` |
 | title | varchar(200) | |
-| statement_md | text | Đề bài dạng Markdown kèm LaTeX, tối đa 100.000 ký tự. Ví dụ mẫu viết thẳng trong đề |
-| time_limit_ms | int, CHECK 100–20.000 | Mặc định 1000 |
-| memory_limit_kb | int, CHECK 16 MB–2 GB | Mặc định 256 MB |
-| visibility | varchar + CHECK `public` / `private` | Mặc định `private`. **Chỉ admin đổi** (D: "Admin tự đổi") |
-| created_by_id | → users, `SET NULL` | Người tạo |
+| statement_md | text | Tối đa 100.000 ký tự |
+| time_limit_ms | int, CHECK 100–20.000 | |
+| memory_limit_kb | int, CHECK 16 MB–2 GB | |
+| points | float, CHECK 0,01–1000 | |
+| scoring_mode | varchar + CHECK | xem trên |
+| visibility | varchar + CHECK `public` / `private` | Chỉ admin đổi |
+| published_at | timestamptz, có index | |
+| group_id | → problem_groups, `SET NULL` | |
+| source_visibility, testcase_visibility, testcase_result_visibility | varchar + CHECK | xem trên |
+| created_by_id | → users, `SET NULL` | |
 | created_at, updated_at | timestamptz | |
 
-**problem_authors** [CHỐT]: những người được sửa bài, ngoài admin. Người tạo bài là tác giả đầu tiên.
-| Cột | Kiểu | Ghi chú |
-|---|---|---|
-| problem_id | → problems, `CASCADE` | PK (problem_id, user_id) |
-| user_id | → users, `CASCADE` | Có index. Tác giả phải là setter trở lên |
+**problem_members**: (problem_id, user_id) là PK, cột `role` ∈ `creator` / `curator` / `tester`. **Mỗi người chỉ giữ một vai trò trong một bài.** Bảng này thay cho `problem_authors` (tác giả cũ chuyển thành `creator`).
+
+**languages**: `key` là PK (tên executor của dmoj: `CPP17`, `PY3`…), `name`, `ext`, `is_enabled`, `sort_order`. Migration nạp sẵn 29 ngôn ngữ có trong image `vnoj/judge-tiervnoj` (kiểm tra bằng `/api/info` ngày 2026-11-17), bật sẵn 14 ngôn ngữ phổ biến. Admin đổi tên, bật/tắt, sắp xếp ở `/admin/catalog`.
+
+**problem_types**, **problem_groups**: `id`, `slug` (unique, `^[a-z0-9_-]{1,32}$`, dùng trong đường dẫn lọc `?type=dp`), `name`. Xóa một mục thì các bài chỉ bị gỡ khỏi mục đó.
+
+**problem_solutions**: `problem_id` là PK, `content_md`, `is_public`, `publish_at` (nullable), `updated_at`.
 
 `data_version` và các cột cấu hình chấm sẽ thêm ở M3, cùng bảng `problem_data`.
 
@@ -405,17 +431,18 @@ Hệ thống hỗ trợ cả ba cách, **admin của kỳ thi tự chọn**:
 
 ## 6.8 Bài tập (M2) [CHỐT]
 
-**Quyền**
+**Quyền** (cập nhật 2026-11-17, có creator/curator/tester)
 
 | Việc | Ai làm được |
 |---|---|
 | Xem bài `public` | Mọi người, kể cả khách chưa đăng nhập |
-| Xem bài `private` | Tác giả của bài, admin, superadmin. Người khác nhận **404** (không để lộ việc bài tồn tại) |
-| Tạo bài | Setter trở lên. Bài mới luôn ở chế độ `private`, người tạo là tác giả |
-| Sửa (tên, đề, giới hạn, tác giả, ảnh) | Tác giả (phải là setter trở lên), admin, superadmin |
+| Xem bài `private` | Creator, curator, tester của bài, admin, superadmin. Người khác nhận **404** |
+| Tạo bài | Setter trở lên. Bài mới luôn ở chế độ `private`, người tạo là creator |
+| Sửa bài (mọi trường trừ chế độ hiển thị), người phụ trách, lời giải, ảnh | Creator/curator (phải là setter trở lên), admin |
 | Công khai hoặc ẩn bài, xóa bài | **Chỉ admin và superadmin** |
+| Xem lời giải | Người sửa được bài luôn thấy. Người khác thấy khi lời giải `is_public` và đã qua `publish_at` |
 
-- **Mời đồng tác giả:** thay danh sách tác giả (`PUT /authors`). Tác giả phải là setter trở lên và đang hoạt động. Danh sách không được rỗng.
+- Người không phải admin **không tự bỏ được quyền sửa của mình** (`cannot_remove_self`). Bài luôn phải có ít nhất một creator.
 
 **Đề bài**
 - Markdown theo chuẩn GitHub kèm LaTeX: `$...$` cho công thức trong dòng, `$$...$$` cho công thức khối. Một dòng chỉ chứa `$$...$$` cũng được tự chuyển thành công thức khối.
@@ -433,23 +460,38 @@ Hệ thống hỗ trợ cả ba cách, **admin của kỳ thi tự chọn**:
 
 | Endpoint | Ghi chú |
 |---|---|
-| `GET /api/problems?q=&mine=&sort=code\|newest&page=&page_size=` | Chỉ trả những bài người xem được xem |
+| `GET /api/problems?q=&mine=&group=&type=&sort=code\|newest\|points&page=&page_size=` | Chỉ trả bài người xem được xem. `mine`: bài mình giữ vai trò bất kỳ |
 | `POST /api/problems` | Setter trở lên |
-| `GET /api/problems/{code}` | Có thêm `can_edit` và `can_change_visibility` để giao diện ẩn hoặc hiện nút |
-| `PATCH /api/problems/{code}` | `visibility` chỉ admin đổi được (lỗi `visibility_admin_only`) |
+| `GET /api/problems/{code}` | Trang đề: có `creators`, `allowed_languages`, `has_solution`, `can_edit`… **Không** có danh sách curator/tester và các chế độ hiển thị |
+| `GET /api/problems/{code}/settings` | Chỉ người sửa được bài. Có đủ mọi trường |
+| `PATCH /api/problems/{code}` | Mọi trường. `group_id: null` để gỡ nhóm. `visibility` chỉ admin đổi |
+| `PUT /api/problems/{code}/members` | `{creators, curators, testers}` (tên đăng nhập) |
+| `GET`, `PUT`, `DELETE /api/problems/{code}/solution` | Lời giải |
 | `DELETE /api/problems/{code}` | Admin |
-| `PUT /api/problems/{code}/authors` | `{usernames: [...]}` |
-| `POST /api/problems/{code}/images` | multipart, trả về `{url}` |
+| `POST /api/problems/{code}/images` | multipart, trả về `{url}` (dùng chung cho đề và lời giải) |
+| `GET /api/languages[?include_disabled=true]`, `PATCH /api/languages/{key}` | Đọc: mọi người. Sửa: admin |
+| `GET`, `POST /api/problem-types`, `PATCH`, `DELETE /api/problem-types/{id}` | Tương tự cho `/api/problem-groups` |
+
+**Đề bài: cú pháp**
+- Công thức: `$...$` hoặc **`~...~` (cách viết của VNOJ/DMOJ)** cho công thức trong dòng; `$$...$$` cho công thức khối (một dòng `$$...$$` cũng được). `~~gạch~~` vẫn là gạch ngang.
+- **HTML an toàn**: theo bộ lọc của GitHub (`rehype-sanitize`): `<sup>`, `<sub>`, `<details>`, `<kbd>`, bảng, ảnh…; chặn `<script>`, `on*=`, `javascript:`. Thứ tự plugin: remark-math → rehype-raw → rehype-sanitize → rehype-katex (đã kiểm tra thực tế).
+
+**Trình soạn Markdown** (`ui/src/components/editor/`), dùng cho đề bài và lời giải
+- CodeMirror 6: tô màu cú pháp Markdown, tự xuống dòng, hoàn tác, tìm kiếm (Ctrl+F), giao diện sáng/tối.
+- Thanh công cụ: đậm, nghiêng, gạch ngang, tiêu đề (H2–H4), chỉ số trên/dưới, công thức trong dòng/khối, code trong dòng/khối, trích dẫn, danh sách, danh sách đánh số, kẻ ngang, liên kết, tải ảnh, bảng, khối ví dụ Input/Output, **mẫu đề bài** (khung Đề bài / Dữ liệu vào / Kết quả / Giới hạn / Ví dụ / Giải thích).
+- Phím tắt: Ctrl+B, Ctrl+I, Ctrl+K (liên kết), Ctrl+E (code), Ctrl+M (công thức).
+- Ba chế độ: Soạn / **Song song** (mặc định trên màn hình rộng) / Xem trước. Có toàn màn hình (Esc để thoát), hộp hướng dẫn cú pháp, đếm ký tự.
+- Ảnh: nút tải lên, dán, kéo-thả, chèn đúng vị trí con trỏ hoặc chỗ thả.
 
 **Giao diện**
-- `/problems`: danh sách bài, tìm kiếm, lọc "Bài của tôi" và nút "Tạo bài" cho setter trở lên.
-- `/problems/new`: tạo bài, sau đó chuyển sang trang soạn.
-- `/problems/:code`: trang đề.
-- `/problems/:code/edit`: soạn đề. Trên màn hình rộng, ô soạn và phần xem trước nằm cạnh nhau. Trên điện thoại, chuyển qua lại giữa "Soạn" và "Xem trước". Rời trang khi có thay đổi chưa lưu thì trình duyệt cảnh báo.
+- `/problems`: tìm kiếm, lọc theo nhóm và dạng bài (nằm trên URL, nên chia sẻ link được), sắp xếp theo mã hoặc điểm, cột Nhóm/Điểm, badge dạng bài, "Bài của tôi".
+- `/problems/:code`: đề bài bên trái, **bảng thông tin** bên phải (điểm, chế độ chấm, giới hạn, người tạo, nhóm, dạng, ngày công bố, ngôn ngữ). Có tab "Lời giải" khi người xem được xem.
+- `/problems/:code/edit`: 5 tab **Đề bài · Thông tin chung · Chấm bài · Quyền & hiển thị · Lời giải** (tab nằm trên URL `?tab=`). Một nút Lưu cho 4 tab đầu. Lỗi kiểm tra thì tự nhảy tới tab có lỗi. Lời giải có nút lưu riêng. Ở M3 sẽ thêm tab **Test**.
+- `/admin/catalog`: quản lý Dạng bài, Nhóm bài, Ngôn ngữ.
 - Trang chủ hiện 6 bài công khai mới nhất.
-- **Các trang bài tập được tải khi cần (lazy)**: Markdown và KaTeX (khoảng 450 KB) không nằm trong file JS chính. File JS chính giảm từ khoảng 600 KB xuống 478 KB.
+- Các trang bài tập được tải khi cần (lazy).
 
-**Để sau [HOÃN]:** tag và độ khó, điểm luyện tập, danh sách ngôn ngữ được phép theo từng bài (M4), trình soạn có thanh công cụ định dạng, ảnh riêng tư có kiểm tra quyền.
+**Để sau [HOÃN]:** bản dịch đề (nhiều ngôn ngữ), đề dạng PDF, nguồn bài (source), giấy phép, danh sách người bị cấm nộp, tác giả riêng cho lời giải, gợi ý @mention trong trình soạn, đồng bộ cuộn giữa ô soạn và xem trước, ảnh riêng tư có kiểm tra quyền.
 
 ## 7. Hoãn lại [HOÃN]
 
@@ -478,6 +520,7 @@ _(Chưa có.)_
 
 ## Lịch sử thay đổi
 
+- **2026-11-17 (3):** Bài tập theo tiêu chuẩn đầy đủ (mục 6.2 "Tiêu chuẩn một bài tập"): ngày công bố, creator/curator/tester (`problem_members` thay `problem_authors`), 3 chế độ hiển thị, dạng bài, nhóm bài, điểm, chế độ chấm, ngôn ngữ được phép (`languages` nạp sẵn từ máy chấm), lời giải. Migration `561a33c4465f`. Trang quản trị `/admin/catalog`. Trình soạn Markdown chuyên nghiệp (CodeMirror, thanh công cụ, phím tắt, song song, toàn màn hình, hướng dẫn). Đề hỗ trợ `~...~` và HTML an toàn. Trang sửa bài chia 5 tab. Trang đề có bảng thông tin.
 - **2026-11-17 (2):** Sửa lỗi trang trắng khi mở qua tunnel HTTPS (ví dụ `https://8080-....vbee.lge.com`). Có ba nguyên nhân: (1) cổng HMR bị cố định là 8080, nên qua tunnel (cổng 443) WebSocket không nối được, và khi Vite cần tải lại trang thì trang lazy không tải được. Đã bỏ cổng cố định, client tự dùng host và cổng của trang. (2) Import icon từ barrel `@tabler/icons-react` làm dev server gửi một file 16,5 MB. Đã chuyển sang import từng icon qua `ui/src/icons.ts`. (3) nginx chưa nén. Đã bật gzip. Trang chủ ở chế độ dev giảm từ khoảng 30 MB xuống 3,1 MB. Thêm trang `RouteError`: lỗi khi render route hiện thông báo thay vì trang trắng, và lỗi tải code thì tự tải lại một lần.
 - **2026-11-17:** Xong M2: bảng `problems` và `problem_authors` (migration `faaf0ac385e1`), quyền xem và sửa theo tác giả, chỉ admin công khai hoặc xóa bài, đề Markdown kèm KaTeX (không render HTML thô), nút copy cho khối code, upload ảnh (nhận diện qua byte đầu, không nhận SVG, lưu ở `data/media`, nginx `/media/`), các trang bài tập được tải khi cần. Thêm mục 6.8.
 - **2026-11-16 (10):** Thêm vai trò `superadmin` (migration `4118966da114`). Quản lý người dùng theo thứ bậc. Quyền superadmin chỉ cấp từ terminal (`scripts/create-superadmin.sh`). Bảo vệ superadmin cuối cùng.

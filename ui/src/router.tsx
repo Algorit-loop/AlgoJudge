@@ -31,6 +31,12 @@ export const router = createBrowserRouter([
           </RequireRole>
         ),
       },
+      {
+        path: '/admin/catalog',
+        element: (
+          <RequireRole roles={['admin']}>{lazyPage(() => import('./pages/admin/CatalogPage'), 'CatalogPage')}</RequireRole>
+        ),
+      },
       { path: '/status', element: <StatusPage /> },
       // Built in later milestones.
       { path: '/problems', element: lazyPage(() => import('./pages/problems/ProblemListPage'), 'ProblemListPage') },
